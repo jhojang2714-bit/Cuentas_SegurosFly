@@ -3,15 +3,38 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dashboard Cuentas SegurosFly | Panel Financiero</title>
+<title>Mercury USA — Fly Group Corp | Panel Financiero</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
 :root{--bg:#0D0F12;--bg2:#13161A;--bg3:#1A1E24;--bg4:#21262E;--border:#2A3040;--border2:#333C4D;--text:#E8EDF5;--text2:#8A95A8;--text3:#525E70;--green:#2DD4A0;--red:#F06050;--blue:#4DA8F5;--purple:#9B8FEE;--amber:#F5B840;--pink:#F06090}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;min-height:100vh}
+.nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 20px;height:54px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.nav-brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:.95rem}
+.nav-right{display:flex;align-items:center;gap:10px;font-size:.78rem;color:var(--text2)}
+.live-dot{width:7px;height:7px;border-radius:50%;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.live-badge{font-size:.65rem;font-weight:700;padding:2px 8px;border-radius:99px;border:1px solid}
+.live-badge.live{background:#0a3325;color:var(--green);border-color:#1a5c3a}
+.live-badge.local{background:#1a1a0a;color:var(--amber);border-color:#3a3a1a}
+.last-updated{font-size:.72rem;color:var(--text3)}
+.btn-reload{background:var(--bg3);color:var(--text2);border:1px solid var(--border2);border-radius:7px;padding:5px 12px;font-size:.75rem;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;gap:5px;transition:all .15s}
+.btn-reload:hover{border-color:var(--blue);color:var(--blue);background:rgba(77,168,245,.08)}
+.btn-reload.loading{opacity:.6;cursor:not-allowed}
+.btn-reload svg{transition:transform .3s}
+.btn-reload.loading svg{animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loadOverlay{position:fixed;inset:0;background:rgba(13,15,18,.88);z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px}
+#loadOverlay.show{display:flex}
+.spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
+.load-msg{font-size:.85rem;color:var(--text2)}
+#toast{position:fixed;bottom:24px;right:24px;padding:10px 16px;border-radius:10px;font-size:.8rem;font-weight:500;z-index:300;opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none;border:1px solid}
+#toast.show{opacity:1;transform:translateY(0)}
+#toast.ok{background:var(--bg2);border-color:var(--green);color:var(--green)}
+#toast.err{background:var(--bg2);border-color:var(--red);color:var(--red)}
 .shell{max-width:1100px;margin:0 auto;padding:24px 20px}
-.hd{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:14px}
+.hd{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:14px;padding-top:22px}
 .hd h1{font-size:22px;font-weight:700;letter-spacing:-.4px}
 .hd p{font-size:12px;color:var(--text2);margin-top:4px}
 .ctrls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -49,13 +72,36 @@ tr:hover td{background:var(--bg3)}
 .badge{font-size:10px;padding:2px 7px;border-radius:20px;font-weight:700}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
 .scroll-x{overflow-x:auto}
+.banner{background:var(--bg2);border:1px solid var(--border2);border-radius:10px;padding:11px 14px;margin-bottom:16px;font-size:.78rem;color:var(--text2);display:flex;align-items:flex-start;gap:9px;line-height:1.5}
+.banner.live{border-color:#1a5c3a}
+.banner code{font-family:'DM Mono',monospace;font-size:.68rem;background:var(--bg3);padding:1px 5px;border-radius:4px;border:1px solid var(--border);color:var(--text3)}
 @media(max-width:700px){.grid2{grid-template-columns:1fr}.kpi-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
+
+<div id="loadOverlay"><div class="spinner"></div><div class="load-msg" id="loadMsg">Conectando con Google Sheets...</div></div>
+<div id="toast"></div>
+
+<nav class="nav">
+  <div class="nav-brand">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    Mercury USA &nbsp;<span style="color:var(--text3);font-weight:400">Fly Group Corp</span>
+  </div>
+  <div class="nav-right">
+    <span class="live-badge local" id="modeBadge">📁 LOCAL</span>
+    <div class="live-dot" id="liveDot" style="background:var(--text3)"></div>
+    <span class="last-updated" id="lastUpdated">—</span>
+    <button class="btn-reload" id="reloadBtn" onclick="reloadFromSheet()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      Actualizar
+    </button>
+  </div>
+</nav>
+
 <div class="shell">
 <div class="hd">
-  <div><h1>Dashboard Cuentas SegurosFly</h1><p>Resumen financiero &middot; Mar 2025 &ndash; a Hoy &middot; USD</p></div>
+  <div><h1>Mercury USA — Fly Group Corp</h1><p id="dataSubtitle">Panel financiero · Mar 2025 – Abr 2026 · USD</p></div>
   <div class="ctrls">
     <select id="yrSel"><option value="all">Todos los años</option><option value="2025">2025</option><option value="2026">2026</option></select>
     <select id="mnSel">
@@ -67,6 +113,12 @@ tr:hover td{background:var(--bg3)}
     </select>
   </div>
 </div>
+
+<div class="banner" id="dataBanner">
+  <span>📁</span>
+  <div>Mostrando <strong>datos de respaldo</strong>. Haz clic en <strong>Actualizar</strong> para cargar los datos más recientes directamente desde Google Sheets.</div>
+</div>
+
 <div class="tab-bar">
   <button class="tab on" onclick="setView('resumen',this)">Resumen</button>
   <button class="tab" onclick="setView('socios',this)">Socios</button>
@@ -81,124 +133,283 @@ tr:hover td{background:var(--bg3)}
 <div id="kpiGrid" class="kpi-grid"></div>
 <div id="mainArea"></div>
 </div>
+
 <script>
-const MES={1:'Ene',2:'Feb',3:'Mar',4:'Abr',5:'May',6:'Jun',7:'Jul',8:'Ago',9:'Sep',10:'Oct',11:'Nov',12:'Dic'};
-const ALL_MONTHS=['2025-3','2025-4','2025-5','2025-6','2025-7','2025-8','2025-9','2025-10','2025-11','2025-12','2026-1','2026-2','2026-3','2026-4'];
-const SOCIOS={'Felix Ballesteros':{'2025-6':44.7,'2025-7':488,'2025-8':212,'2025-10':820,'2025-11':410,'2025-12':769,'2026-1':314,'2026-2':255.22,'2026-3':430},'Otoniel Martell':{'2025-4':302.28,'2025-5':88.47,'2025-6':100.28,'2025-7':150.45,'2025-8':444.97,'2025-9':102.81,'2025-10':200.04,'2025-11':156.55,'2025-12':543,'2026-1':619,'2026-2':123,'2026-3':247.41,'2026-4':295.58},'Wilker Casadiego':{'2025-8':40,'2025-9':503.3,'2025-10':401.25,'2025-11':120,'2025-12':42,'2026-1':284,'2026-2':276,'2026-3':428,'2026-4':300},'Daniel Torres':{'2025-5':984.71,'2025-11':298,'2025-12':600,'2026-2':200},'Ricardo Torres':{'2025-8':288.71,'2025-9':910.83,'2025-11':150,'2025-12':383,'2026-1':308.08,'2026-2':251,'2026-3':419.32,'2026-4':267.91},'Jhojan Torres':{'2025-3':12.12,'2025-4':926.73,'2025-9':127.47,'2025-10':150,'2025-11':576,'2025-12':540,'2026-1':313,'2026-2':276,'2026-3':580}};
-const PASARELAS={'Stripe':{'2025-12':1347,'2026-1':1370,'2026-2':1359.12,'2026-3':3954.42,'2026-4':4276.56},'Dlocal':{'2026-2':651.73,'2026-3':385.95,'2026-4':2298.74},'Mercury Cashback':{'2025-10':10,'2025-11':15.71,'2025-12':15.73,'2026-1':37.06,'2026-2':31.40,'2026-3':44.15,'2026-4':44.97},'Inversion LR':{'2026-4':1317},'Inversion JT':{'2026-3':499.5}};
-const EGRESOS={'Google ads':{'2025-10':110,'2025-11':556,'2025-12':837,'2026-1':1916,'2026-2':1804,'2026-3':2207,'2026-4':1232},'Facebook':{'2025-10':330,'2025-11':485,'2025-12':80,'2026-1':153,'2026-2':228,'2026-3':403,'2026-4':758},'WTA':{'2025-12':97.37,'2026-1':1161.85,'2026-3':602.74,'2026-4':775.06},'Analista Mkt':{'2026-1':400,'2026-2':400,'2026-3':500,'2026-4':500},'Asesor':{'2025-11':120,'2025-12':400,'2026-1':461.53,'2026-2':149,'2026-3':480,'2026-4':1612},'Jhon Programador':{'2025-5':748.6,'2025-6':752.9,'2025-7':747.5,'2025-8':750.7,'2025-9':751.6,'2025-11':751.5},'Digitalocean':{'2025-8':13,'2025-9':49.77,'2025-10':77.83,'2025-11':74.83,'2025-12':77.58,'2026-1':77.58,'2026-2':93.05,'2026-3':102.08,'2026-4':104.73},'Movigoo':{'2025-12':452,'2026-2':102,'2026-3':102},'Willy Zabaleta':{'2025-10':550,'2025-11':550,'2025-12':275},'Net2phone':{'2026-1':194.46,'2026-3':109,'2026-4':109.63},'Envato':{'2025-9':41.83,'2025-10':12.55,'2025-12':41.83,'2026-1':41.83,'2026-2':41.83,'2026-3':41.83,'2026-4':41.83},'Claude ia':{'2025-8':10,'2025-10':21,'2025-11':20,'2025-12':20,'2026-1':20,'2026-2':20,'2026-3':20,'2026-4':20},'VERCEL INC.':{'2025-11':20,'2025-12':20,'2026-1':20,'2026-2':20,'2026-3':20,'2026-4':20},'Airalo E-Sim':{'2025-12':14.89,'2026-1':8.85,'2026-2':85,'2026-3':71,'2026-4':58},'Hostinger':{'2025-6':44.7,'2026-2':16.39,'2026-3':13.54,'2026-4':13.92},'Dasbanq':{'2025-9':600,'2025-10':50,'2025-11':51.7},'Odoo':{'2025-9':261.6,'2026-4':73.33},'Google Workspace':{'2026-1':2.16,'2026-2':34.48,'2026-3':33.71,'2026-4':34.41},'Brevo':{'2025-12':18,'2026-2':18},'OpenIA':{'2026-1':10,'2026-4':40},'Contador USA':{'2026-2':250},'Marcela Web':{'2026-1':150},'Disenador Grafico':{'2026-3':100,'2026-4':100},'Alianza':{'2026-4':61.24}};
-const RECURRENTES=['Google ads','Facebook','Digitalocean','Claude ia','VERCEL INC.','Envato','Analista Mkt','Net2phone','Airalo E-Sim','Asesor','WTA','Movigoo','Google Workspace','Hostinger','Brevo'];
-const SC=['#4DA8F5','#2DD4A0','#F06050','#9B8FEE','#F5B840','#F06090'];
-const EC_C=['#F06050','#F5B840','#4DA8F5','#2DD4A0','#9B8FEE','#F06090','#F5B840','#4DA8F5','#2DD4A0','#F06050','#9B8FEE','#4DA8F5','#2DD4A0','#F5B840','#F06090','#9B8FEE','#F06050','#4DA8F5','#2DD4A0','#F5B840','#F06090','#9B8FEE','#4DA8F5'];
-const RC=['#F06050','#4DA8F5','#2DD4A0','#9B8FEE','#F5B840','#F06090','#2DD4A0','#4DA8F5','#9B8FEE','#F5B840','#F06090','#F06050','#4DA8F5','#2DD4A0','#9B8FEE'];
-const PC={Stripe:'#4DA8F5',Dlocal:'#2DD4A0','Mercury Cashback':'#525E70','Inversion LR':'#9B8FEE','Inversion JT':'#F06090'};
-let view='resumen',charts={};
-let activeSocios=new Set(Object.keys(SOCIOS));
-let activeEgresos=new Set(Object.keys(EGRESOS));
-const fmt=n=>'$'+Math.round(n).toLocaleString('es-CO');
-const pct=n=>Math.round(n)+'%';
-const lbl=k=>{const[y,m]=k.split('-');return MES[+m]+" '"+y.slice(2);};
-function getMonths(){const yr=document.getElementById('yrSel').value;const mn=document.getElementById('mnSel').value;return ALL_MONTHS.filter(k=>{const[y,m]=k.split('-');return(yr==='all'||y===yr)&&(mn==='all'||m===mn);});}
-function killCharts(){Object.values(charts).forEach(c=>{try{c.destroy();}catch(e){}});charts={};}
-function setView(v,el){view=v;document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));el.classList.add('on');render();}
+/* ═══════════════════════════════════════
+   SHEET CONFIG — conectado a tu Sheets
+═══════════════════════════════════════ */
+var SHEET_ID = '1-9073LxXGKAxXvwoUbcbwqklTKZAMpa4cVkpsqEmX3M';
+var GID_MERCURY = '1150506311';
+
+/* ═══════════════════════════════════════
+   DATOS DE RESPALDO (ultima lectura real)
+═══════════════════════════════════════ */
+var MES={1:'Ene',2:'Feb',3:'Mar',4:'Abr',5:'May',6:'Jun',7:'Jul',8:'Ago',9:'Sep',10:'Oct',11:'Nov',12:'Dic'};
+var ALL_MONTHS=['2025-3','2025-4','2025-5','2025-6','2025-7','2025-8','2025-9','2025-10','2025-11','2025-12','2026-1','2026-2','2026-3','2026-4'];
+
+var SOCIOS={
+  'Felix Ballesteros':{'2025-6':44.7,'2025-7':488,'2025-8':212,'2025-10':820,'2025-11':410,'2025-12':769,'2026-1':314,'2026-2':255,'2026-3':430,'2026-4':1317},
+  'Otoniel Martell':{'2025-4':302,'2025-5':88,'2025-6':100,'2025-7':150,'2025-8':445,'2025-9':103,'2025-10':200,'2025-11':157,'2025-12':543,'2026-1':619,'2026-2':123,'2026-3':247,'2026-4':296},
+  'Wilker Casadiego':{'2025-8':40,'2025-9':503,'2025-10':401,'2025-11':120,'2025-12':42,'2026-1':284,'2026-2':276,'2026-3':428,'2026-4':300},
+  'Daniel Torres':{'2025-5':985,'2025-11':298,'2025-12':600,'2026-2':200},
+  'Ricardo Torres':{'2025-8':289,'2025-9':911,'2025-11':150,'2025-12':383,'2026-1':308,'2026-2':251,'2026-3':419,'2026-4':268},
+  'Jhojan Torres':{'2025-3':12,'2025-4':927,'2025-9':127,'2025-10':150,'2025-11':576,'2025-12':540,'2026-1':313,'2026-2':276,'2026-3':580}
+};
+var PASARELAS={
+  'Stripe':{'2025-12':1347,'2026-1':1370,'2026-2':1359,'2026-3':3954,'2026-4':4276},
+  'Dlocal':{'2026-2':652,'2026-3':386,'2026-4':2299},
+  'Mercury Cashback':{'2025-10':10,'2025-11':16,'2025-12':16,'2026-1':37,'2026-2':31,'2026-3':44,'2026-4':45},
+  'Inversion LR':{'2026-4':0},
+  'Inversion JT':{'2026-3':500}
+};
+var EGRESOS={
+  'Google ads':{'2025-10':110,'2025-11':556,'2025-12':837,'2026-1':1916,'2026-2':1804,'2026-3':2207,'2026-4':1232},
+  'Facebook':{'2025-10':330,'2025-11':485,'2025-12':80,'2026-1':153,'2026-2':228,'2026-3':403,'2026-4':758},
+  'WTA':{'2025-12':97,'2026-1':1162,'2026-3':603,'2026-4':775},
+  'Analista Mkt':{'2026-1':400,'2026-2':400,'2026-3':500,'2026-4':500},
+  'Asesor':{'2025-11':120,'2025-12':400,'2026-1':462,'2026-2':149,'2026-3':480,'2026-4':1612},
+  'Jhon Programador':{'2025-5':749,'2025-6':753,'2025-7':748,'2025-8':751,'2025-9':752,'2025-11':752},
+  'Digitalocean':{'2025-8':13,'2025-9':50,'2025-10':78,'2025-11':75,'2025-12':78,'2026-1':78,'2026-2':93,'2026-3':102,'2026-4':105},
+  'Movigoo':{'2025-12':452,'2026-2':102,'2026-3':102},
+  'Willy Zabaleta':{'2025-10':550,'2025-11':550,'2025-12':275},
+  'Net2phone':{'2026-1':194,'2026-3':109,'2026-4':110},
+  'Envato':{'2025-9':42,'2025-10':13,'2025-12':42,'2026-1':42,'2026-2':42,'2026-3':42,'2026-4':42},
+  'Claude ia':{'2025-8':10,'2025-10':21,'2025-11':20,'2025-12':20,'2026-1':20,'2026-2':20,'2026-3':20,'2026-4':20},
+  'VERCEL INC.':{'2025-11':20,'2025-12':20,'2026-1':20,'2026-2':20,'2026-3':20,'2026-4':20},
+  'Airalo E-Sim':{'2025-12':15,'2026-1':9,'2026-2':85,'2026-3':71,'2026-4':58},
+  'Hostinger':{'2025-6':45,'2026-2':16,'2026-3':14,'2026-4':14},
+  'Dasbanq':{'2025-9':600,'2025-10':50,'2025-11':52},
+  'Odoo':{'2025-9':262,'2026-4':73},
+  'Google Workspace':{'2026-1':2,'2026-2':34,'2026-3':34,'2026-4':34},
+  'Brevo':{'2025-12':18,'2026-2':18,'2026-4':18},
+  'OpenIA':{'2026-1':10,'2026-4':40},
+  'Contador USA':{'2026-2':250},
+  'Marcela Web':{'2026-1':150},
+  'Disenador Grafico':{'2026-3':100,'2026-4':100},
+  'Alianza':{'2026-4':61},
+  'Analista Marketing':{'2026-1':400,'2026-2':400,'2026-3':500,'2026-4':500}
+};
+var RECURRENTES=['Google ads','Facebook','Digitalocean','Claude ia','VERCEL INC.','Envato','Analista Mkt','Analista Marketing','Net2phone','Airalo E-Sim','Asesor','WTA','Movigoo','Google Workspace','Hostinger','Brevo'];
+var SC=['#4DA8F5','#2DD4A0','#F06050','#9B8FEE','#F5B840','#F06090'];
+var EC_C=['#F06050','#F5B840','#4DA8F5','#2DD4A0','#9B8FEE','#F06090','#F5B840','#4DA8F5','#2DD4A0','#F06050','#9B8FEE','#4DA8F5','#2DD4A0','#F5B840','#F06090','#9B8FEE','#F06050','#4DA8F5','#2DD4A0','#F5B840','#F06090','#9B8FEE','#4DA8F5','#2DD4A0','#F5B840'];
+var RC=['#F06050','#4DA8F5','#2DD4A0','#9B8FEE','#F5B840','#F06090','#2DD4A0','#4DA8F5','#9B8FEE','#F5B840','#F06090','#F06050','#4DA8F5','#2DD4A0','#9B8FEE','#F06050'];
+var PC={Stripe:'#4DA8F5',Dlocal:'#2DD4A0','Mercury Cashback':'#525E70','Inversion LR':'#9B8FEE','Inversion JT':'#F06090'};
+
+var view='resumen',charts={};
+var activeSocios=new Set(Object.keys(SOCIOS));
+var activeEgresos=new Set(Object.keys(EGRESOS));
+var fmt=function(n){return'$'+Math.round(n).toLocaleString('es-CO');};
+var pct=function(n){return Math.round(n)+'%';};
+var lbl=function(k){var p=k.split('-');return MES[+p[1]]+" '"+p[0].slice(2);};
+
+/* ═══════════════════════════════════════
+   UI HELPERS
+═══════════════════════════════════════ */
+function showToast(msg,type,ms){
+  var t=document.getElementById('toast');
+  t.textContent=msg;t.className='show '+(type==='err'?'err':'ok');
+  setTimeout(function(){t.className='';},ms||3000);
+}
+function setLoading(on,msg){
+  var ov=document.getElementById('loadOverlay');
+  var btn=document.getElementById('reloadBtn');
+  if(on){ov.classList.add('show');btn.classList.add('loading');document.getElementById('loadMsg').textContent=msg||'Cargando...';}
+  else{ov.classList.remove('show');btn.classList.remove('loading');}
+}
+
+/* ═══════════════════════════════════════
+   CSV PARSER
+═══════════════════════════════════════ */
+function parseCSV(text){
+  var rows=[],cur='',inQ=false,row=[];
+  for(var i=0;i<text.length;i++){
+    var c=text[i];
+    if(c==='"'){inQ=!inQ;continue;}
+    if(c===','&&!inQ){row.push(cur.trim());cur='';continue;}
+    if((c==='\n'||c==='\r')&&!inQ){
+      if(cur||row.length){row.push(cur.trim());rows.push(row);}
+      cur='';row=[];if(c==='\r'&&text[i+1]==='\n')i++;continue;
+    }
+    cur+=c;
+  }
+  if(cur||row.length){row.push(cur.trim());rows.push(row);}
+  return rows;
+}
+
+function cleanNum(s){
+  if(!s)return 0;
+  var n=parseFloat(String(s).replace(/[$\s]/g,'').replace(/\./g,'').replace(',','.'));
+  return isNaN(n)?0:Math.abs(n);
+}
+
+function mkKey(mes,anio){
+  var m=parseInt(mes,10),y=parseInt(anio,10);
+  if(isNaN(m)||isNaN(y)||m<1||m>12||y<2020)return null;
+  return y+'-'+m;
+}
+
+/* ═══════════════════════════════════════
+   RELOAD FROM GOOGLE SHEETS
+   Columnas Mercury USA (hoja de transacciones):
+   Tipo Ingresos -> col 19 (Socio Abono)
+   Tipo Egresos  -> col 20 (Debitos-Gastos)
+   Mes           -> col 22
+   Año           -> col 23
+   Amount        -> col 2 (valor absoluto)
+═══════════════════════════════════════ */
+async function reloadFromSheet(){
+  setLoading(true,'Conectando con Google Sheets...');
+  var url='https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/export?format=csv&gid='+GID_MERCURY;
+  try{
+    var res=await fetch(url+'&t='+Date.now());
+    if(!res.ok)throw new Error('HTTP '+res.status+'. Verifica que el Sheet sea publico (cualquier persona con el enlace puede ver).');
+    var text=await res.text();
+    setLoading(true,'Procesando datos...');
+    var rows=parseCSV(text);
+    if(rows.length<2)throw new Error('El Sheet parece vacio.');
+
+    // Find header row (has "Date" and "Tipo Ingresos" or "Mes")
+    var hdrIdx=-1;
+    for(var i=0;i<Math.min(rows.length,20);i++){
+      var r=rows[i].join(',').toLowerCase();
+      if(r.includes('date')&&r.includes('mes')){hdrIdx=i;break;}
+    }
+    if(hdrIdx<0){
+      // Try to find the transaction table by looking for "Tipo Ingresos" header
+      for(var i=0;i<Math.min(rows.length,50);i++){
+        var r=rows[i].join(',').toLowerCase();
+        if(r.includes('tipo ingresos')&&r.includes('tipo egresos')){hdrIdx=i;break;}
+      }
+    }
+    if(hdrIdx<0)throw new Error('No se encontro la fila de encabezado. Verifica que la hoja Mercury USA tenga las columnas correctas.');
+
+    var header=rows[hdrIdx].map(function(h){return h.toLowerCase().trim();});
+    var iAmount=header.findIndex(function(h){return h==='amount'||h.includes('monto');});
+    var iMes=header.findIndex(function(h){return h==='mes';});
+    var iAnio=header.findIndex(function(h){return h==='año'||h==='anio'||h==='year';});
+    var iTipoIn=header.findIndex(function(h){return h.includes('tipo ingreso')||h.includes('socio abono')||h.includes('abono');});
+    var iTipoEg=header.findIndex(function(h){return h.includes('tipo egreso')||h.includes('debito')||h.includes('debitos');});
+
+    if(iMes<0||iAnio<0)throw new Error('No se encontraron las columnas Mes y Ano. Revisa el encabezado de la hoja Mercury USA.');
+
+    var newSocios={},newEgresos={},newPas={Stripe:{},Dlocal:{},'Mercury Cashback':{},'Inversion LR':{},'Inversion JT':{}};
+
+    rows.slice(hdrIdx+1).forEach(function(row){
+      if(!row[iMes]&&!row[iAnio])return;
+      var mk=mkKey(row[iMes],row[iAnio]);
+      if(!mk)return;
+      var amount=iAmount>=0?cleanNum(row[iAmount]):0;
+      if(amount<=0)return;
+      var tipoIn=iTipoIn>=0?(row[iTipoIn]||'').trim():'';
+      var tipoEg=iTipoEg>=0?(row[iTipoEg]||'').trim():'';
+
+      if(tipoIn){
+        var tl=tipoIn.toLowerCase();
+        if(tl.includes('stripe')){newPas.Stripe[mk]=(newPas.Stripe[mk]||0)+amount;}
+        else if(tl.includes('dlocal')||tl.includes('pingpong')){newPas.Dlocal[mk]=(newPas.Dlocal[mk]||0)+amount;}
+        else if(tl.includes('cashback')){newPas['Mercury Cashback'][mk]=(newPas['Mercury Cashback'][mk]||0)+amount;}
+        else if(tl.includes('inversion lr')||tl.includes('inversion_lr')){newPas['Inversion LR'][mk]=(newPas['Inversion LR'][mk]||0)+amount;}
+        else if(tl.includes('inversion jt')||tl.includes('inversion_jt')){newPas['Inversion JT'][mk]=(newPas['Inversion JT'][mk]||0)+amount;}
+        else if(tipoIn&&!tl.includes('interese')&&!tl.includes('global')){
+          if(!newSocios[tipoIn])newSocios[tipoIn]={};
+          newSocios[tipoIn][mk]=(newSocios[tipoIn][mk]||0)+amount;
+        }
+      }
+      if(tipoEg&&tipoEg.length>1){
+        if(!newEgresos[tipoEg])newEgresos[tipoEg]={};
+        newEgresos[tipoEg][mk]=(newEgresos[tipoEg][mk]||0)+amount;
+      }
+    });
+
+    var hasSocios=Object.keys(newSocios).length>0;
+    var hasEgresos=Object.keys(newEgresos).length>0;
+
+    if(hasSocios){
+      Object.keys(SOCIOS).forEach(function(k){delete SOCIOS[k];});
+      Object.keys(newSocios).forEach(function(k){SOCIOS[k]=newSocios[k];});
+      activeSocios=new Set(Object.keys(SOCIOS));
+    }
+    if(hasEgresos){
+      Object.keys(EGRESOS).forEach(function(k){delete EGRESOS[k];});
+      Object.keys(newEgresos).forEach(function(k){EGRESOS[k]=newEgresos[k];});
+      activeEgresos=new Set(Object.keys(EGRESOS));
+    }
+    Object.keys(newPas).forEach(function(k){PASARELAS[k]=newPas[k];});
+
+    // Rebuild months list
+    var allMK=new Set();
+    [SOCIOS,EGRESOS,PASARELAS].forEach(function(obj){
+      Object.values(obj).forEach(function(d){Object.keys(d).forEach(function(k){allMK.add(k);});});
+    });
+    ALL_MONTHS.length=0;
+    Array.from(allMK).filter(function(k){return /^\d{4}-\d{1,2}$/.test(k);}).sort(function(a,b){
+      var pa=a.split('-'),pb=b.split('-');
+      var ya=+pa[0],yb=+pb[0],ma=+pa[1],mb=+pb[1];
+      return ya!==yb?ya-yb:ma-mb;
+    }).forEach(function(k){ALL_MONTHS.push(k);});
+    rebuildYearSelect();
+
+    var now=new Date();
+    document.getElementById('lastUpdated').textContent='Act. '+now.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
+    document.getElementById('modeBadge').textContent='🟢 EN VIVO';
+    document.getElementById('modeBadge').className='live-badge live';
+    document.getElementById('liveDot').style.background='var(--green)';
+    document.getElementById('dataBanner').className='banner live';
+    document.getElementById('dataBanner').innerHTML='<span>🟢</span><div>Datos actualizados desde <strong>Google Sheets</strong> el '+now.toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'})+' a las '+now.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})+'. Haz clic en <strong>Actualizar</strong> para refrescar.</div>';
+    document.getElementById('dataSubtitle').textContent='Panel financiero en vivo · Google Sheets · USD';
+
+    setLoading(false);
+    render();
+    showToast('Datos actualizados correctamente ✓','ok');
+  }catch(err){
+    setLoading(false);
+    console.error(err);
+    showToast('Error: '+err.message,'err',6000);
+  }
+}
+
+function rebuildYearSelect(){
+  var sel=document.getElementById('yrSel');
+  var cur=sel.value;
+  var years=[...new Set(ALL_MONTHS.map(function(k){return k.split('-')[0];}))].sort().reverse();
+  sel.innerHTML='<option value="all">Todos los años</option>';
+  years.forEach(function(y){var o=document.createElement('option');o.value=y;o.textContent=y;sel.appendChild(o);});
+  sel.value=cur;
+}
+
+/* ═══════════════════════════════════════
+   DASHBOARD CORE
+═══════════════════════════════════════ */
+function getMonths(){
+  var yr=document.getElementById('yrSel').value;
+  var mn=document.getElementById('mnSel').value;
+  return ALL_MONTHS.filter(function(k){var p=k.split('-');return(yr==='all'||p[0]===yr)&&(mn==='all'||p[1]===mn);});
+}
+function killCharts(){Object.values(charts).forEach(function(c){try{c.destroy();}catch(e){}});charts={};}
+function setView(v,el){view=v;document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('on');});el.classList.add('on');render();}
 function baseOpts(){return{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8A95A8',font:{family:'DM Sans',size:11}}},tooltip:{backgroundColor:'#0D0F12',titleColor:'#E8EDF5',bodyColor:'#8A95A8',borderColor:'#2A3040',borderWidth:1,padding:10,cornerRadius:8}},scales:{x:{ticks:{color:'#8A95A8',font:{family:'DM Sans',size:11}},grid:{color:'#21262E'}},y:{ticks:{color:'#8A95A8',font:{family:'DM Sans',size:11}},grid:{color:'#21262E'}}}};}
 function setKPI(items){document.getElementById('kpiGrid').innerHTML=items.map(function(x){return'<div class="kpi" style="--ac:'+x.c+'"><div class="kpi-l">'+x.l+'</div><div class="kpi-v">'+x.v+'</div><div class="kpi-s">'+x.s+'</div></div>';}).join('');}
-function buildChips(type){var ef=document.getElementById('extraFilters');var cw=document.getElementById('chipWrap');var fl=document.getElementById('fLabel');if(type==='socios'){ef.style.display='block';fl.textContent='Filtrar socios';var all=Object.keys(SOCIOS);cw.innerHTML='<button class="chip on" id="ca-s" onclick="toggleAll(\'socios\')">Todos</button>'+all.map(function(s,i){return'<button class="chip on" id="cs-'+i+'" style="border-color:'+SC[i%SC.length]+';color:'+SC[i%SC.length]+';background:'+SC[i%SC.length]+'18" onclick="toggleChip(\'socios\','+i+',\''+s+'\')">'+s.split(' ')[0]+'</button>';}).join('');}else if(type==='egresos'){ef.style.display='block';fl.textContent='Filtrar egresos';var all=Object.keys(EGRESOS);cw.innerHTML='<button class="chip on" id="ca-e" onclick="toggleAll(\'egresos\')">Todos</button>'+all.map(function(e,i){return'<button class="chip on" id="ce-'+i+'" onclick="toggleChip(\'egresos\','+i+',\''+e+'\')">'+e+'</button>';}).join('');}else{ef.style.display='none';}}
-function toggleAll(type){var all=type==='socios'?Object.keys(SOCIOS):Object.keys(EGRESOS);var active=type==='socios'?activeSocios:activeEgresos;var wasAll=active.size===all.length;if(wasAll)active.clear();else all.forEach(function(k){active.add(k);});all.forEach(function(_,i){var chip=document.getElementById(type==='socios'?'cs-'+i:'ce-'+i);if(chip)chip.classList.toggle('on',!wasAll);});var allBtn=document.getElementById(type==='socios'?'ca-s':'ca-e');if(allBtn)allBtn.classList.toggle('on',!wasAll);render();}
-function toggleChip(type,idx,name){var active=type==='socios'?activeSocios:activeEgresos;var all=type==='socios'?Object.keys(SOCIOS):Object.keys(EGRESOS);if(active.has(name))active.delete(name);else active.add(name);var chip=document.getElementById(type==='socios'?'cs-'+idx:'ce-'+idx);if(chip)chip.classList.toggle('on',active.has(name));var allBtn=document.getElementById(type==='socios'?'ca-s':'ca-e');if(allBtn)allBtn.classList.toggle('on',active.size===all.length);render();}
+function buildChips(type){var ef=document.getElementById('extraFilters');var cw=document.getElementById('chipWrap');var fl=document.getElementById('fLabel');if(type==='socios'){ef.style.display='block';fl.textContent='Filtrar socios';var all=Object.keys(SOCIOS);cw.innerHTML='<button class="chip on" id="ca-s" onclick="toggleAll(\'socios\')">Todos</button>'+all.map(function(s,i){return'<button class="chip on" id="cs-'+i+'" style="border-color:'+SC[i%SC.length]+';color:'+SC[i%SC.length]+';background:'+SC[i%SC.length]+'18" onclick="toggleChip(\'socios\','+i+',\''+s.replace(/'/g,"\\'")+'\')">'+(s.split(' ')[0])+'</button>';}).join('');}else if(type==='egresos'){ef.style.display='block';fl.textContent='Filtrar egresos';var all=Object.keys(EGRESOS);cw.innerHTML='<button class="chip on" id="ca-e" onclick="toggleAll(\'egresos\')">Todos</button>'+all.map(function(e,i){return'<button class="chip on" id="ce-'+i+'" onclick="toggleChip(\'egresos\','+i+',\''+e.replace(/'/g,"\\'")+'\')">'+(e)+'</button>';}).join('');}else{ef.style.display='none';}}
+function toggleAll(type){var all=type==='socios'?Object.keys(SOCIOS):Object.keys(EGRESOS);var active=type==='socios'?activeSocios:activeEgresos;var wasAll=active.size===all.length;if(wasAll)active.clear();else all.forEach(function(k){active.add(k);});all.forEach(function(_,i){var chip=document.getElementById(type==='socios'?'cs-'+i:'ce-'+i);if(chip)chip.classList.toggle('on',!wasAll);});var ab=document.getElementById(type==='socios'?'ca-s':'ca-e');if(ab)ab.classList.toggle('on',!wasAll);render();}
+function toggleChip(type,idx,name){var active=type==='socios'?activeSocios:activeEgresos;var all=type==='socios'?Object.keys(SOCIOS):Object.keys(EGRESOS);if(active.has(name))active.delete(name);else active.add(name);var chip=document.getElementById(type==='socios'?'cs-'+idx:'ce-'+idx);if(chip)chip.classList.toggle('on',active.has(name));var ab=document.getElementById(type==='socios'?'ca-s':'ca-e');if(ab)ab.classList.toggle('on',active.size===all.length);render();}
 function totalS(k){return Object.values(SOCIOS).reduce(function(s,d){return s+(d[k]||0);},0);}
 function totalE(k){return Object.values(EGRESOS).reduce(function(s,d){return s+(d[k]||0);},0);}
 function totalP(k){return Object.values(PASARELAS).reduce(function(s,d){return s+(d[k]||0);},0);}
 function render(){killCharts();var months=getMonths();var labels=months.map(lbl);if(view==='resumen')doResumen(months,labels);else if(view==='socios')doSocios(months,labels);else if(view==='pasarelas')doPasarelas(months,labels);else if(view==='egresos')doEgresos(months,labels);else if(view==='recurrentes')doRecurrentes(months,labels);}
 
-function doResumen(months,labels){
-  buildChips('none');
-  var tI=months.reduce(function(s,k){return s+totalS(k);},0);
-  var tP=months.reduce(function(s,k){return s+totalP(k);},0);
-  var tE=months.reduce(function(s,k){return s+totalE(k);},0);
-  var bal=(tI+tP)-tE;
-  var ratio=tI+tP>0?Math.round(tE/(tI+tP)*100):0;
-  setKPI([
-    {l:'Ingresos socios',v:fmt(tI),s:months.length+' mes(es) · Mercury USA',c:'var(--green)'},
-    {l:'Pasarelas + inversiones',v:fmt(tP),s:'Stripe · Dlocal · LR · JT',c:'var(--blue)'},
-    {l:'Egresos totales',v:fmt(tE),s:'Todas las categorias',c:'var(--red)'},
-    {l:'Balance neto',v:fmt(bal),s:bal>=0?'Superavit':'Deficit',c:bal>=0?'var(--green)':'var(--red)'},
-    {l:'Ratio gasto/ingreso',v:pct(ratio),s:'Egresos / (Socios+Pasarelas)',c:ratio<80?'var(--green)':ratio<100?'var(--amber)':'var(--red)'},
-    {l:'Prom. ingreso/mes',v:fmt(months.length?(tI+tP)/months.length:0),s:'Ingresos totales',c:'var(--purple)'}
-  ]);
-  var rows=months.map(function(k){var i=totalS(k),p=totalP(k),e=totalE(k),b=i+p-e,r=i+p>0?Math.round(e/(i+p)*100):0;return'<tr><td style="font-family:\'DM Sans\'">'+lbl(k)+'</td><td class="pos">'+fmt(i)+'</td><td style="color:var(--blue)">'+fmt(p)+'</td><td class="neg">'+fmt(e)+'</td><td class="'+(b>=0?'pos':'neg')+'">'+fmt(b)+'</td><td style="color:'+(r<80?'var(--green)':r<100?'var(--amber)':'var(--red)')+'">'+pct(r)+'</td></tr>';}).join('');
-  document.getElementById('mainArea').innerHTML='<div class="cs"><div class="st">Ingresos socios + pasarelas vs egresos</div><div style="height:280px"><canvas id="cMain"></canvas></div></div><div class="grid2"><div class="cs"><div class="st">Balance mensual</div><div style="height:200px"><canvas id="cBal"></canvas></div></div><div class="cs"><div class="st">Composicion de ingresos</div><div style="height:200px"><canvas id="cPie"></canvas></div></div></div><div class="ts"><div class="th2"><span>Resumen mensual</span><span style="color:var(--text3)">'+months.length+' meses</span></div><div class="scroll-x"><table><thead><tr><th>Mes</th><th>Socios</th><th>Pasarelas</th><th>Egresos</th><th>Balance</th><th>Ratio</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
-  charts.main=new Chart(document.getElementById('cMain'),{type:'bar',data:{labels:labels,datasets:[{label:'Socios',data:months.map(function(k){return totalS(k);}),backgroundColor:'#2DD4A066',borderColor:'#2DD4A0',borderWidth:1,borderRadius:3},{label:'Pasarelas',data:months.map(function(k){return totalP(k);}),backgroundColor:'#4DA8F566',borderColor:'#4DA8F5',borderWidth:1,borderRadius:3},{label:'Egresos',data:months.map(function(k){return totalE(k);}),backgroundColor:'#F0605066',borderColor:'#F06050',borderWidth:1,borderRadius:3}]},options:baseOpts()});
-  var bo=baseOpts();bo.plugins.legend={display:false};
-  charts.bal=new Chart(document.getElementById('cBal'),{type:'line',data:{labels:labels,datasets:[{label:'Balance',data:months.map(function(k){return totalS(k)+totalP(k)-totalE(k);}),borderColor:'#4DA8F5',backgroundColor:'#4DA8F518',fill:true,tension:.35,pointRadius:3,pointBackgroundColor:'#4DA8F5'}]},options:bo});
-  var socT=months.reduce(function(s,k){return s+totalS(k);},0);
-  charts.pie=new Chart(document.getElementById('cPie'),{type:'doughnut',data:{labels:['Socios','Stripe','Dlocal','Cashback','Inversiones'],datasets:[{data:[socT,months.reduce(function(s,k){return s+(PASARELAS.Stripe[k]||0);},0),months.reduce(function(s,k){return s+(PASARELAS.Dlocal[k]||0);},0),months.reduce(function(s,k){return s+(PASARELAS['Mercury Cashback'][k]||0);},0),months.reduce(function(s,k){return s+(PASARELAS['Inversion LR'][k]||0)+(PASARELAS['Inversion JT'][k]||0);},0)],backgroundColor:['#2DD4A0','#4DA8F5','#2DD4A099','#525E70','#9B8FEE']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8A95A8',font:{size:11},padding:8}},tooltip:{backgroundColor:'#0D0F12',titleColor:'#E8EDF5',bodyColor:'#8A95A8',borderColor:'#2A3040',borderWidth:1}}}});
-}
+function doResumen(months,labels){buildChips('none');var tI=months.reduce(function(s,k){return s+totalS(k);},0);var tP=months.reduce(function(s,k){return s+totalP(k);},0);var tE=months.reduce(function(s,k){return s+totalE(k);},0);var bal=(tI+tP)-tE;var ratio=tI+tP>0?Math.round(tE/(tI+tP)*100):0;setKPI([{l:'Ingresos socios',v:fmt(tI),s:months.length+' mes(es) · Mercury USA',c:'var(--green)'},{l:'Pasarelas + inversiones',v:fmt(tP),s:'Stripe · Dlocal · LR · JT',c:'var(--blue)'},{l:'Egresos totales',v:fmt(tE),s:'Todas las categorias',c:'var(--red)'},{l:'Balance neto',v:fmt(bal),s:bal>=0?'Superavit':'Deficit',c:bal>=0?'var(--green)':'var(--red)'},{l:'Ratio gasto/ingreso',v:pct(ratio),s:'Egresos / (Socios+Pasarelas)',c:ratio<80?'var(--green)':ratio<100?'var(--amber)':'var(--red)'},{l:'Prom. ingreso/mes',v:fmt(months.length?(tI+tP)/months.length:0),s:'Ingresos totales',c:'var(--purple)'}]);var rows=months.map(function(k){var i=totalS(k),p=totalP(k),e=totalE(k),b=i+p-e,r=i+p>0?Math.round(e/(i+p)*100):0;return'<tr><td style="font-family:\'DM Sans\'">'+lbl(k)+'</td><td class="pos">'+fmt(i)+'</td><td style="color:var(--blue)">'+fmt(p)+'</td><td class="neg">'+fmt(e)+'</td><td class="'+(b>=0?'pos':'neg')+'">'+fmt(b)+'</td><td style="color:'+(r<80?'var(--green)':r<100?'var(--amber)':'var(--red)')+'">'+pct(r)+'</td></tr>';}).join('');document.getElementById('mainArea').innerHTML='<div class="cs"><div class="st">Ingresos socios + pasarelas vs egresos</div><div style="height:280px"><canvas id="cMain"></canvas></div></div><div class="grid2"><div class="cs"><div class="st">Balance mensual</div><div style="height:200px"><canvas id="cBal"></canvas></div></div><div class="cs"><div class="st">Composicion de ingresos</div><div style="height:200px"><canvas id="cPie"></canvas></div></div></div><div class="ts"><div class="th2"><span>Resumen mensual</span><span style="color:var(--text3)">'+months.length+' meses</span></div><div class="scroll-x"><table><thead><tr><th>Mes</th><th>Socios</th><th>Pasarelas</th><th>Egresos</th><th>Balance</th><th>Ratio</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';charts.main=new Chart(document.getElementById('cMain'),{type:'bar',data:{labels:labels,datasets:[{label:'Socios',data:months.map(function(k){return totalS(k);}),backgroundColor:'#2DD4A066',borderColor:'#2DD4A0',borderWidth:1,borderRadius:3},{label:'Pasarelas',data:months.map(function(k){return totalP(k);}),backgroundColor:'#4DA8F566',borderColor:'#4DA8F5',borderWidth:1,borderRadius:3},{label:'Egresos',data:months.map(function(k){return totalE(k);}),backgroundColor:'#F0605066',borderColor:'#F06050',borderWidth:1,borderRadius:3}]},options:baseOpts()});var bo=baseOpts();bo.plugins.legend={display:false};charts.bal=new Chart(document.getElementById('cBal'),{type:'line',data:{labels:labels,datasets:[{label:'Balance',data:months.map(function(k){return totalS(k)+totalP(k)-totalE(k);}),borderColor:'#4DA8F5',backgroundColor:'#4DA8F518',fill:true,tension:.35,pointRadius:3,pointBackgroundColor:'#4DA8F5'}]},options:bo});var socT=months.reduce(function(s,k){return s+totalS(k);},0);charts.pie=new Chart(document.getElementById('cPie'),{type:'doughnut',data:{labels:['Socios','Stripe','Dlocal','Cashback','Inversiones'],datasets:[{data:[socT,months.reduce(function(s,k){return s+(PASARELAS.Stripe[k]||0);},0),months.reduce(function(s,k){return s+(PASARELAS.Dlocal[k]||0);},0),months.reduce(function(s,k){return s+(PASARELAS['Mercury Cashback'][k]||0);},0),months.reduce(function(s,k){return s+(PASARELAS['Inversion LR'][k]||0)+(PASARELAS['Inversion JT'][k]||0);},0)],backgroundColor:['#2DD4A0','#4DA8F5','#2DD4A099','#525E70','#9B8FEE']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8A95A8',font:{size:11},padding:8}},tooltip:{backgroundColor:'#0D0F12',titleColor:'#E8EDF5',bodyColor:'#8A95A8',borderColor:'#2A3040',borderWidth:1}}}});}
 
-function doSocios(months,labels){
-  buildChips('socios');
-  var keys=Object.keys(SOCIOS).filter(function(s){return activeSocios.has(s);});
-  var tots=keys.map(function(s){return{name:s,total:months.reduce(function(sum,k){return sum+(SOCIOS[s][k]||0);},0)};}).sort(function(a,b){return b.total-a.total;});
-  var grand=tots.reduce(function(s,t){return s+t.total;},0);
-  var maxT=Math.max.apply(null,tots.map(function(t){return t.total;}).concat([1]));
-  setKPI([{l:'Total seleccionados',v:fmt(grand),s:keys.length+' socio(s)',c:'var(--blue)'},{l:'Lider del periodo',v:tots[0]?tots[0].name.split(' ')[0]:'--',s:fmt(tots[0]?tots[0].total:0),c:'var(--green)'},{l:'Prom. por socio',v:fmt(keys.length?grand/keys.length:0),s:'Periodo seleccionado',c:'var(--purple)'},{l:'Prom. mensual',v:fmt(months.length?grand/months.length:0),s:'Socios seleccionados',c:'var(--amber)'}]);
-  var allKeys=Object.keys(SOCIOS);
-  var trows=tots.map(function(t){var color=SC[allKeys.indexOf(t.name)%SC.length];var p=grand?(t.total/grand*100).toFixed(1):0;var best=months.reduce(function(b,k){return(SOCIOS[t.name][k]||0)>(SOCIOS[t.name][b]||0)?k:b;},months[0]||'');return'<tr><td style="font-family:\'DM Sans\'"><span style="display:inline-flex;align-items:center;gap:6px"><span class="dot2" style="background:'+color+'"></span>'+t.name+'</span></td><td class="pos">'+fmt(t.total)+'</td><td>'+p+'%<div class="bar-bg"><div class="bar-fill" style="width:'+Math.round(t.total/maxT*100)+'%;background:'+color+'"></div></div></td><td>'+fmt(months.length?t.total/months.length:0)+'</td><td style="color:var(--text3)">'+( best?lbl(best):'--')+'</td></tr>';}).join('');
-  document.getElementById('mainArea').innerHTML='<div class="cs"><div class="st">Ingresos por socio - mensual (apilado)</div><div style="height:280px"><canvas id="cSoc"></canvas></div></div><div class="ts"><div class="th2"><span>Detalle por socio</span><span style="color:var(--text3)">'+keys.length+' socios</span></div><table><thead><tr><th>Socio</th><th>Total periodo</th><th>Share</th><th>Prom./mes</th><th>Mejor mes</th></tr></thead><tbody>'+trows+'</tbody></table></div>';
-  charts.soc=new Chart(document.getElementById('cSoc'),{type:'bar',data:{labels:labels,datasets:keys.map(function(s){return{label:s,data:months.map(function(k){return SOCIOS[s][k]||0;}),backgroundColor:SC[allKeys.indexOf(s)%SC.length]+'88',borderColor:SC[allKeys.indexOf(s)%SC.length],borderWidth:1,borderRadius:2};})},options:(function(){var o=baseOpts();o.scales.x.stacked=true;o.scales.y.stacked=true;return o;})()});
-}
+function doSocios(months,labels){buildChips('socios');var keys=Object.keys(SOCIOS).filter(function(s){return activeSocios.has(s);});var tots=keys.map(function(s){return{name:s,total:months.reduce(function(sum,k){return sum+(SOCIOS[s][k]||0);},0)};}).sort(function(a,b){return b.total-a.total;});var grand=tots.reduce(function(s,t){return s+t.total;},0);var maxT=Math.max.apply(null,tots.map(function(t){return t.total;}).concat([1]));setKPI([{l:'Total seleccionados',v:fmt(grand),s:keys.length+' socio(s)',c:'var(--blue)'},{l:'Lider del periodo',v:tots[0]?tots[0].name.split(' ')[0]:'--',s:fmt(tots[0]?tots[0].total:0),c:'var(--green)'},{l:'Prom. por socio',v:fmt(keys.length?grand/keys.length:0),s:'Periodo',c:'var(--purple)'},{l:'Prom. mensual',v:fmt(months.length?grand/months.length:0),s:'Socios seleccionados',c:'var(--amber)'}]);var allKeys=Object.keys(SOCIOS);var trows=tots.map(function(t){var color=SC[allKeys.indexOf(t.name)%SC.length];var p=grand?(t.total/grand*100).toFixed(1):0;var best=months.reduce(function(b,k){return(SOCIOS[t.name][k]||0)>(SOCIOS[t.name][b]||0)?k:b;},months[0]||'');return'<tr><td style="font-family:\'DM Sans\'"><span style="display:inline-flex;align-items:center;gap:6px"><span class="dot2" style="background:'+color+'"></span>'+t.name+'</span></td><td class="pos">'+fmt(t.total)+'</td><td>'+p+'%<div class="bar-bg"><div class="bar-fill" style="width:'+Math.round(t.total/maxT*100)+'%;background:'+color+'"></div></div></td><td>'+fmt(months.length?t.total/months.length:0)+'</td><td style="color:var(--text3)">'+(best?lbl(best):'--')+'</td></tr>';}).join('');document.getElementById('mainArea').innerHTML='<div class="cs"><div class="st">Ingresos por socio - mensual (apilado)</div><div style="height:280px"><canvas id="cSoc"></canvas></div></div><div class="ts"><div class="th2"><span>Detalle por socio</span><span style="color:var(--text3)">'+keys.length+' socios</span></div><table><thead><tr><th>Socio</th><th>Total periodo</th><th>Share</th><th>Prom./mes</th><th>Mejor mes</th></tr></thead><tbody>'+trows+'</tbody></table></div>';charts.soc=new Chart(document.getElementById('cSoc'),{type:'bar',data:{labels:labels,datasets:keys.map(function(s){return{label:s,data:months.map(function(k){return SOCIOS[s][k]||0;}),backgroundColor:SC[allKeys.indexOf(s)%SC.length]+'88',borderColor:SC[allKeys.indexOf(s)%SC.length],borderWidth:1,borderRadius:2};})},options:(function(){var o=baseOpts();o.scales.x.stacked=true;o.scales.y.stacked=true;return o;})()});}
 
-function doPasarelas(months,labels){
-  buildChips('none');
-  var rows=[{name:'Stripe',color:PC.Stripe,data:PASARELAS.Stripe,tipo:'Pasarela'},{name:'Dlocal',color:PC.Dlocal,data:PASARELAS.Dlocal,tipo:'Pasarela'},{name:'Mercury Cashback',color:PC['Mercury Cashback'],data:PASARELAS['Mercury Cashback'],tipo:'Otro'},{name:'Inversion LR',color:PC['Inversion LR'],data:PASARELAS['Inversion LR'],tipo:'Inversion'},{name:'Inversion JT',color:PC['Inversion JT'],data:PASARELAS['Inversion JT'],tipo:'Inversion'}];
-  rows=rows.map(function(r){r.total=months.reduce(function(s,k){return s+(r.data[k]||0);},0);return r;}).sort(function(a,b){return b.total-a.total;});
-  var grand=rows.reduce(function(s,r){return s+r.total;},0);
-  var maxR=Math.max.apply(null,rows.map(function(r){return r.total;}).concat([1]));
-  var stripe=rows.find(function(r){return r.name==='Stripe';});
-  var dlocal=rows.find(function(r){return r.name==='Dlocal';});
-  var invLR=rows.find(function(r){return r.name==='Inversion LR';});
-  var invJT=rows.find(function(r){return r.name==='Inversion JT';});
-  setKPI([{l:'Total externo',v:fmt(grand),s:months.length+' mes(es)',c:'var(--blue)'},{l:'Stripe',v:fmt(stripe?stripe.total:0),s:(grand?Math.round((stripe?stripe.total:0)/grand*100):0)+'% del total',c:PC.Stripe},{l:'Dlocal',v:fmt(dlocal?dlocal.total:0),s:(grand?Math.round((dlocal?dlocal.total:0)/grand*100):0)+'% del total',c:PC.Dlocal},{l:'Inversiones LR+JT',v:fmt((invLR?invLR.total:0)+(invJT?invJT.total:0)),s:'Capital externo',c:PC['Inversion LR']}]);
-  var trows=rows.map(function(r){var p=grand?(r.total/grand*100).toFixed(1):0;var tBg=r.tipo==='Pasarela'?'#4DA8F520':r.tipo==='Inversion'?'#9B8FEE20':'#52507020';var tCol=r.tipo==='Pasarela'?'#4DA8F5':r.tipo==='Inversion'?'#9B8FEE':'#8A95A8';return'<tr><td style="font-family:\'DM Sans\'"><span style="display:inline-flex;align-items:center;gap:6px"><span class="dot2" style="background:'+r.color+'"></span>'+r.name+'</span></td><td><span class="badge" style="background:'+tBg+';color:'+tCol+'">'+r.tipo+'</span></td><td class="pos">'+fmt(r.total)+'</td><td>'+p+'%<div class="bar-bg"><div class="bar-fill" style="width:'+Math.round(r.total/maxR*100)+'%;background:'+r.color+'"></div></div></td><td>'+fmt(months.length?r.total/months.length:0)+'</td></tr>';}).join('');
-  document.getElementById('mainArea').innerHTML='<div class="grid2"><div class="cs"><div class="st">Pasarelas e inversiones - mensual</div><div style="height:260px"><canvas id="cPas"></canvas></div></div><div class="cs"><div class="st">Distribucion por fuente</div><div style="height:260px"><canvas id="cPDo"></canvas></div></div></div><div class="ts"><div class="th2"><span>Detalle por fuente</span></div><table><thead><tr><th>Fuente</th><th>Tipo</th><th>Total</th><th>Share</th><th>Prom./mes</th></tr></thead><tbody>'+trows+'</tbody></table></div>';
-  charts.pas=new Chart(document.getElementById('cPas'),{type:'bar',data:{labels:labels,datasets:rows.map(function(r){return{label:r.name,data:months.map(function(k){return r.data[k]||0;}),backgroundColor:r.color+'66',borderColor:r.color,borderWidth:1,borderRadius:3};})},options:(function(){var o=baseOpts();o.scales.x.stacked=true;o.scales.y.stacked=true;return o;})()});
-  charts.pdo=new Chart(document.getElementById('cPDo'),{type:'doughnut',data:{labels:rows.map(function(r){return r.name;}),datasets:[{data:rows.map(function(r){return r.total;}),backgroundColor:rows.map(function(r){return r.color+'CC';})}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8A95A8',font:{size:11}}},tooltip:{backgroundColor:'#0D0F12',titleColor:'#E8EDF5',bodyColor:'#8A95A8',borderColor:'#2A3040',borderWidth:1}}}});
-}
+function doPasarelas(months,labels){buildChips('none');var rows=[{name:'Stripe',color:PC.Stripe,data:PASARELAS.Stripe,tipo:'Pasarela'},{name:'Dlocal',color:PC.Dlocal,data:PASARELAS.Dlocal,tipo:'Pasarela'},{name:'Mercury Cashback',color:PC['Mercury Cashback'],data:PASARELAS['Mercury Cashback'],tipo:'Otro'},{name:'Inversion LR',color:PC['Inversion LR'],data:PASARELAS['Inversion LR'],tipo:'Inversion'},{name:'Inversion JT',color:PC['Inversion JT'],data:PASARELAS['Inversion JT'],tipo:'Inversion'}];rows=rows.map(function(r){r.total=months.reduce(function(s,k){return s+(r.data[k]||0);},0);return r;}).sort(function(a,b){return b.total-a.total;});var grand=rows.reduce(function(s,r){return s+r.total;},0);var maxR=Math.max.apply(null,rows.map(function(r){return r.total;}).concat([1]));var stripeR=rows.find(function(r){return r.name==='Stripe';});var dlocalR=rows.find(function(r){return r.name==='Dlocal';});var invLR=rows.find(function(r){return r.name==='Inversion LR';});var invJT=rows.find(function(r){return r.name==='Inversion JT';});setKPI([{l:'Total externo',v:fmt(grand),s:months.length+' mes(es)',c:'var(--blue)'},{l:'Stripe',v:fmt(stripeR?stripeR.total:0),s:(grand?Math.round((stripeR?stripeR.total:0)/grand*100):0)+'%',c:PC.Stripe},{l:'Dlocal',v:fmt(dlocalR?dlocalR.total:0),s:(grand?Math.round((dlocalR?dlocalR.total:0)/grand*100):0)+'%',c:PC.Dlocal},{l:'Inversiones LR+JT',v:fmt((invLR?invLR.total:0)+(invJT?invJT.total:0)),s:'Capital externo',c:PC['Inversion LR']}]);var trows=rows.map(function(r){var p=grand?(r.total/grand*100).toFixed(1):0;var tBg=r.tipo==='Pasarela'?'#4DA8F520':r.tipo==='Inversion'?'#9B8FEE20':'#52507020';var tCol=r.tipo==='Pasarela'?'#4DA8F5':r.tipo==='Inversion'?'#9B8FEE':'#8A95A8';return'<tr><td style="font-family:\'DM Sans\'"><span style="display:inline-flex;align-items:center;gap:6px"><span class="dot2" style="background:'+r.color+'"></span>'+r.name+'</span></td><td><span class="badge" style="background:'+tBg+';color:'+tCol+'">'+r.tipo+'</span></td><td class="pos">'+fmt(r.total)+'</td><td>'+p+'%<div class="bar-bg"><div class="bar-fill" style="width:'+Math.round(r.total/maxR*100)+'%;background:'+r.color+'"></div></div></td><td>'+fmt(months.length?r.total/months.length:0)+'</td></tr>';}).join('');document.getElementById('mainArea').innerHTML='<div class="grid2"><div class="cs"><div class="st">Pasarelas e inversiones - mensual</div><div style="height:260px"><canvas id="cPas"></canvas></div></div><div class="cs"><div class="st">Distribucion por fuente</div><div style="height:260px"><canvas id="cPDo"></canvas></div></div></div><div class="ts"><div class="th2"><span>Detalle por fuente</span></div><table><thead><tr><th>Fuente</th><th>Tipo</th><th>Total</th><th>Share</th><th>Prom./mes</th></tr></thead><tbody>'+trows+'</tbody></table></div>';charts.pas=new Chart(document.getElementById('cPas'),{type:'bar',data:{labels:labels,datasets:rows.map(function(r){return{label:r.name,data:months.map(function(k){return r.data[k]||0;}),backgroundColor:r.color+'66',borderColor:r.color,borderWidth:1,borderRadius:3};})},options:(function(){var o=baseOpts();o.scales.x.stacked=true;o.scales.y.stacked=true;return o;})()});charts.pdo=new Chart(document.getElementById('cPDo'),{type:'doughnut',data:{labels:rows.map(function(r){return r.name;}),datasets:[{data:rows.map(function(r){return r.total;}),backgroundColor:rows.map(function(r){return r.color+'CC';})}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8A95A8',font:{size:11}}},tooltip:{backgroundColor:'#0D0F12',titleColor:'#E8EDF5',bodyColor:'#8A95A8',borderColor:'#2A3040',borderWidth:1}}}});}
 
-function doEgresos(months,labels){
-  buildChips('egresos');
-  var allEKeys=Object.keys(EGRESOS);
-  var keys=allEKeys.filter(function(e){return activeEgresos.has(e);});
-  var tots=keys.map(function(name){return{name:name,color:EC_C[allEKeys.indexOf(name)%EC_C.length],total:months.reduce(function(s,k){return s+(EGRESOS[name][k]||0);},0)};}).sort(function(a,b){return b.total-a.total;});
-  var grand=tots.reduce(function(s,t){return s+t.total;},0);
-  var maxT=Math.max.apply(null,tots.map(function(t){return t.total;}).concat([1]));
-  setKPI([{l:'Total egresos',v:fmt(grand),s:keys.length+' categoria(s)',c:'var(--red)'},{l:'Mayor gasto',v:tots[0]?tots[0].name:'--',s:fmt(tots[0]?tots[0].total:0),c:'var(--amber)'},{l:'Categorias activas',v:tots.filter(function(t){return t.total>0;}).length,s:'En el periodo',c:'var(--text2)'},{l:'Prom./mes',v:fmt(months.length?grand/months.length:0),s:'Egresos seleccionados',c:'var(--purple)'}]);
-  var top12=tots.slice(0,12);
-  var trows=tots.map(function(t){var p=grand?(t.total/grand*100).toFixed(1):0;return'<tr><td style="font-family:\'DM Sans\'"><span style="display:inline-flex;align-items:center;gap:6px"><span class="dot2" style="background:'+t.color+'"></span>'+t.name+'</span></td><td class="neg">'+fmt(t.total)+'</td><td>'+p+'%<div class="bar-bg"><div class="bar-fill" style="width:'+Math.round(t.total/maxT*100)+'%;background:'+t.color+'"></div></div></td><td style="color:var(--text2)">'+fmt(months.length?t.total/months.length:0)+'</td></tr>';}).join('');
-  document.getElementById('mainArea').innerHTML='<div class="cs"><div class="st">Top egresos - mensual apilado</div><div style="height:280px"><canvas id="cEgr"></canvas></div></div><div class="cs"><div class="st">Top 10 por volumen</div><div style="height:280px"><canvas id="cEH"></canvas></div></div><div class="ts"><div class="th2"><span>Detalle de egresos</span><span style="color:var(--text3)">'+tots.length+' categorias</span></div><table><thead><tr><th>Categoria</th><th>Total</th><th>Share</th><th>Prom./mes</th></tr></thead><tbody>'+trows+'</tbody></table></div>';
-  charts.egr=new Chart(document.getElementById('cEgr'),{type:'bar',data:{labels:labels,datasets:top12.filter(function(t){return t.total>0;}).map(function(t){return{label:t.name,data:months.map(function(k){return EGRESOS[t.name][k]||0;}),backgroundColor:t.color+'55',borderColor:t.color,borderWidth:1,borderRadius:2};})},options:(function(){var o=baseOpts();o.scales.x.stacked=true;o.scales.y.stacked=true;return o;})()});
-  var bo2=baseOpts();bo2.indexAxis='y';bo2.plugins.legend={display:false};
-  charts.eh=new Chart(document.getElementById('cEH'),{type:'bar',data:{labels:top12.map(function(t){return t.name;}),datasets:[{label:'Total',data:top12.map(function(t){return t.total;}),backgroundColor:top12.map(function(t){return t.color+'66';}),borderColor:top12.map(function(t){return t.color;}),borderWidth:1,borderRadius:3}]},options:bo2});
-}
+function doEgresos(months,labels){buildChips('egresos');var allEKeys=Object.keys(EGRESOS);var keys=allEKeys.filter(function(e){return activeEgresos.has(e);});var tots=keys.map(function(name){return{name:name,color:EC_C[allEKeys.indexOf(name)%EC_C.length],total:months.reduce(function(s,k){return s+(EGRESOS[name][k]||0);},0)};}).sort(function(a,b){return b.total-a.total;});var grand=tots.reduce(function(s,t){return s+t.total;},0);var maxT=Math.max.apply(null,tots.map(function(t){return t.total;}).concat([1]));setKPI([{l:'Total egresos',v:fmt(grand),s:keys.length+' categoria(s)',c:'var(--red)'},{l:'Mayor gasto',v:tots[0]?tots[0].name:'--',s:fmt(tots[0]?tots[0].total:0),c:'var(--amber)'},{l:'Categorias activas',v:tots.filter(function(t){return t.total>0;}).length,s:'En el periodo',c:'var(--text2)'},{l:'Prom./mes',v:fmt(months.length?grand/months.length:0),s:'Egresos seleccionados',c:'var(--purple)'}]);var top12=tots.slice(0,12);var trows=tots.map(function(t){var p=grand?(t.total/grand*100).toFixed(1):0;return'<tr><td style="font-family:\'DM Sans\'"><span style="display:inline-flex;align-items:center;gap:6px"><span class="dot2" style="background:'+t.color+'"></span>'+t.name+'</span></td><td class="neg">'+fmt(t.total)+'</td><td>'+p+'%<div class="bar-bg"><div class="bar-fill" style="width:'+Math.round(t.total/maxT*100)+'%;background:'+t.color+'"></div></div></td><td style="color:var(--text2)">'+fmt(months.length?t.total/months.length:0)+'</td></tr>';}).join('');document.getElementById('mainArea').innerHTML='<div class="cs"><div class="st">Top egresos - mensual apilado</div><div style="height:280px"><canvas id="cEgr"></canvas></div></div><div class="cs"><div class="st">Top 10 por volumen</div><div style="height:280px"><canvas id="cEH"></canvas></div></div><div class="ts"><div class="th2"><span>Detalle de egresos</span><span style="color:var(--text3)">'+tots.length+' categorias</span></div><table><thead><tr><th>Categoria</th><th>Total</th><th>Share</th><th>Prom./mes</th></tr></thead><tbody>'+trows+'</tbody></table></div>';charts.egr=new Chart(document.getElementById('cEgr'),{type:'bar',data:{labels:labels,datasets:top12.filter(function(t){return t.total>0;}).map(function(t){return{label:t.name,data:months.map(function(k){return EGRESOS[t.name][k]||0;}),backgroundColor:t.color+'55',borderColor:t.color,borderWidth:1,borderRadius:2};})},options:(function(){var o=baseOpts();o.scales.x.stacked=true;o.scales.y.stacked=true;return o;})()});var bo2=baseOpts();bo2.indexAxis='y';bo2.plugins.legend={display:false};charts.eh=new Chart(document.getElementById('cEH'),{type:'bar',data:{labels:top12.map(function(t){return t.name;}),datasets:[{label:'Total',data:top12.map(function(t){return t.total;}),backgroundColor:top12.map(function(t){return t.color+'66';}),borderColor:top12.map(function(t){return t.color;}),borderWidth:1,borderRadius:3}]},options:bo2});}
 
-function doRecurrentes(months,labels){
-  buildChips('none');
-  var rec=RECURRENTES.filter(function(r){return EGRESOS[r];});
-  var avgs=rec.map(function(name){var actMons=months.filter(function(k){return EGRESOS[name][k]>0;});var total=months.reduce(function(s,k){return s+(EGRESOS[name][k]||0);},0);return{name:name,total:total,avg:actMons.length?total/actMons.length:0,meses:actMons.length};}).filter(function(r){return r.total>0;}).sort(function(a,b){return b.avg-a.avg;});
-  var grand=avgs.reduce(function(s,r){return s+r.total;},0);
-  var top=avgs[0]||{name:'--',avg:0};
-  var maxTot=Math.max.apply(null,avgs.map(function(r){return r.total;}).concat([1]));
-  setKPI([{l:'Total recurrentes',v:fmt(grand),s:months.length+' mes(es)',c:'var(--red)'},{l:'Mayor promedio',v:top.name,s:fmt(top.avg)+'/mes',c:'var(--amber)'},{l:'Categorias recurrentes',v:avgs.length,s:'Con gasto en periodo',c:'var(--text2)'},{l:'Prom. total/mes',v:fmt(months.length?grand/months.length:0),s:'Todos los recurrentes',c:'var(--purple)'}]);
-  var trows=avgs.map(function(r,i){var p=grand?(r.total/grand*100).toFixed(1):0;return'<tr><td style="font-family:\'DM Sans\'"><span style="display:inline-flex;align-items:center;gap:6px"><span class="dot2" style="background:'+RC[i%RC.length]+'"></span>'+r.name+'</span></td><td class="neg">'+fmt(r.total)+'</td><td style="color:var(--text3)">'+r.meses+'</td><td class="neg">'+fmt(r.avg)+'</td><td>'+p+'%<div class="bar-bg"><div class="bar-fill" style="width:'+Math.round(r.total/maxTot*100)+'%;background:'+RC[i%RC.length]+'"></div></div></td></tr>';}).join('');
-  var rhH=Math.max(220,avgs.length*32+60);
-  document.getElementById('mainArea').innerHTML='<div class="cs"><div class="st">Evolucion egresos recurrentes</div><div style="height:260px"><canvas id="cRec"></canvas></div></div><div class="cs"><div class="st">Promedio mensual por categoria recurrente</div><div style="height:'+rhH+'px"><canvas id="cRH"></canvas></div></div><div class="ts"><div class="th2"><span>Comparativa recurrentes</span><span style="color:var(--text3)">'+avgs.length+' categorias</span></div><table><thead><tr><th>Categoria</th><th>Total periodo</th><th>Meses activos</th><th>Prom./mes activo</th><th>Share</th></tr></thead><tbody>'+trows+'</tbody></table></div>';
-  charts.rec=new Chart(document.getElementById('cRec'),{type:'line',data:{labels:labels,datasets:avgs.map(function(r,i){return{label:r.name,data:months.map(function(k){return EGRESOS[r.name][k]||0;}),backgroundColor:RC[i%RC.length]+'22',borderColor:RC[i%RC.length],borderWidth:2,pointRadius:3,tension:.3,fill:false};})},options:baseOpts()});
-  var bo3=baseOpts();bo3.indexAxis='y';bo3.plugins.legend={display:false};bo3.plugins.tooltip.callbacks={label:function(ctx){return ' $'+ctx.raw+'/mes';}};
-  charts.rh=new Chart(document.getElementById('cRH'),{type:'bar',data:{labels:avgs.map(function(r){return r.name;}),datasets:[{label:'Prom./mes',data:avgs.map(function(r){return Math.round(r.avg);}),backgroundColor:avgs.map(function(_,i){return RC[i%RC.length]+'66';}),borderColor:avgs.map(function(_,i){return RC[i%RC.length];}),borderWidth:1,borderRadius:3}]},options:bo3});
-}
+function doRecurrentes(months,labels){buildChips('none');var rec=RECURRENTES.filter(function(r){return EGRESOS[r];});var avgs=rec.map(function(name){var actMons=months.filter(function(k){return EGRESOS[name][k]>0;});var total=months.reduce(function(s,k){return s+(EGRESOS[name][k]||0);},0);return{name:name,total:total,avg:actMons.length?total/actMons.length:0,meses:actMons.length};}).filter(function(r){return r.total>0;}).sort(function(a,b){return b.avg-a.avg;});var grand=avgs.reduce(function(s,r){return s+r.total;},0);var top=avgs[0]||{name:'--',avg:0};var maxTot=Math.max.apply(null,avgs.map(function(r){return r.total;}).concat([1]));setKPI([{l:'Total recurrentes',v:fmt(grand),s:months.length+' mes(es)',c:'var(--red)'},{l:'Mayor promedio',v:top.name,s:fmt(top.avg)+'/mes',c:'var(--amber)'},{l:'Categorias recurrentes',v:avgs.length,s:'Con gasto en periodo',c:'var(--text2)'},{l:'Prom. total/mes',v:fmt(months.length?grand/months.length:0),s:'Todos los recurrentes',c:'var(--purple)'}]);var trows=avgs.map(function(r,i){var p=grand?(r.total/grand*100).toFixed(1):0;return'<tr><td style="font-family:\'DM Sans\'"><span style="display:inline-flex;align-items:center;gap:6px"><span class="dot2" style="background:'+RC[i%RC.length]+'"></span>'+r.name+'</span></td><td class="neg">'+fmt(r.total)+'</td><td style="color:var(--text3)">'+r.meses+'</td><td class="neg">'+fmt(r.avg)+'</td><td>'+p+'%<div class="bar-bg"><div class="bar-fill" style="width:'+Math.round(r.total/maxTot*100)+'%;background:'+RC[i%RC.length]+'"></div></div></td></tr>';}).join('');var rhH=Math.max(220,avgs.length*32+60);document.getElementById('mainArea').innerHTML='<div class="cs"><div class="st">Evolucion egresos recurrentes</div><div style="height:260px"><canvas id="cRec"></canvas></div></div><div class="cs"><div class="st">Promedio mensual por categoria recurrente</div><div style="height:'+rhH+'px"><canvas id="cRH"></canvas></div></div><div class="ts"><div class="th2"><span>Comparativa recurrentes</span><span style="color:var(--text3)">'+avgs.length+' categorias</span></div><table><thead><tr><th>Categoria</th><th>Total periodo</th><th>Meses activos</th><th>Prom./mes activo</th><th>Share</th></tr></thead><tbody>'+trows+'</tbody></table></div>';charts.rec=new Chart(document.getElementById('cRec'),{type:'line',data:{labels:labels,datasets:avgs.map(function(r,i){return{label:r.name,data:months.map(function(k){return EGRESOS[r.name][k]||0;}),backgroundColor:RC[i%RC.length]+'22',borderColor:RC[i%RC.length],borderWidth:2,pointRadius:3,tension:.3,fill:false};})},options:baseOpts()});var bo3=baseOpts();bo3.indexAxis='y';bo3.plugins.legend={display:false};bo3.plugins.tooltip.callbacks={label:function(ctx){return' $'+ctx.raw+'/mes';}}; charts.rh=new Chart(document.getElementById('cRH'),{type:'bar',data:{labels:avgs.map(function(r){return r.name;}),datasets:[{label:'Prom./mes',data:avgs.map(function(r){return Math.round(r.avg);}),backgroundColor:avgs.map(function(_,i){return RC[i%RC.length]+'66';}),borderColor:avgs.map(function(_,i){return RC[i%RC.length];}),borderWidth:1,borderRadius:3}]},options:bo3});}
 
 document.getElementById('yrSel').addEventListener('change',render);
 document.getElementById('mnSel').addEventListener('change',render);
+document.getElementById('lastUpdated').textContent='Respaldo May 2026';
 render();
 </script>
 </body>
