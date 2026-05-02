@@ -283,15 +283,14 @@ async function reloadFromSheet(){
   var ts='&t='+Date.now();
 
   try{
-    // ── fetch all 3 sheets in parallel
     setLoading(true,'Descargando 3 hojas...');
     var [rMerc,rGlob,rOtros]=await Promise.all([
       fetch(base+GID_MERCURY+ts),
       fetch(base+GID_GLOBAL+ts),
       fetch(base+GID_OTROS+ts)
     ]);
-    if(!rMerc.ok) throw new Error('Mercury: HTTP '+rMerc.status+'. Verifica que el Sheet sea público.');
-    if(!rGlob.ok) throw new Error('General_Global: HTTP '+rGlob.status);
+    if(!rMerc.ok)  throw new Error('Mercury USA: HTTP '+rMerc.status+'. Verifica que el Sheet sea público (cualquier persona con el enlace).');
+    if(!rGlob.ok)  throw new Error('General_Global: HTTP '+rGlob.status);
     if(!rOtros.ok) throw new Error('Otros_Cuentas: HTTP '+rOtros.status);
 
     setLoading(true,'Procesando datos...');
@@ -300,207 +299,145 @@ async function reloadFromSheet(){
     var newSocios={}, newEgresos={};
     var newPas={Stripe:{},Dlocal:{},'Mercury Cashback':{},'Inversion LR':{},'Inversion JT':{}};
 
-    // ──────────────────────────────────────────────────
-    // MERCURY USA
-    // Columns: Date(UTC) | Amount | ... | Tipo Ingresos | Tipo Egresos | ... | Mes | Año | Key
-    // Amount = absolute value of transaction
-    // Tipo Ingresos = label when money comes IN  (socios, Stripe, Dlocal, Cashback...)
-    // Tipo Egresos  = label when money goes OUT  (Google ads, Facebook, WTA...)
-    // ──────────────────────────────────────────────────
-    (function(){
-      var rows=parseCSV(tMerc);
-      if(rows.length<2) return;
+    // ─────────────────────────────────────────────────────────────
+    // Parser genérico para las 3 hojas.
+    // Todas tienen: Ingresos (col monto entrada), Egresos (col monto salida),
+    //               Tipo Ingresos (etiqueta), Tipo Egresos (etiqueta), Mes, Año
+    // Mercury además tiene: Amount (monto absoluto de la transacción)
+    //   → en Mercury usamos Amount cuando Ingresos/Egresos no están disponibles
+    // ─────────────────────────────────────────────────────────────
+    function parseSheet(text, sheetName){
+      var rows=parseCSV(text);
+      if(rows.length<2){console.warn('['+sheetName+'] Sin filas'); return;}
+
+      // Buscar fila de encabezado
       var hdrIdx=-1;
       for(var i=0;i<Math.min(rows.length,30);i++){
         var r=rows[i].join(',').toLowerCase();
-        if((r.includes('date')||r.includes('fecha'))&&r.includes('mes')&&r.includes('tipo')){hdrIdx=i;break;}
+        if(r.includes('tipo ingreso')&&r.includes('tipo egreso')){hdrIdx=i;break;}
       }
-      if(hdrIdx<0){
-        for(var i=0;i<Math.min(rows.length,30);i++){
-          var r=rows[i].join(',').toLowerCase();
-          if(r.includes('tipo ingreso')&&r.includes('tipo egreso')){hdrIdx=i;break;}
-        }
-      }
-      if(hdrIdx<0){console.warn('[Mercury] Header not found');return;}
+      if(hdrIdx<0){console.warn('['+sheetName+'] Header no encontrado');return;}
+
       var h=rows[hdrIdx].map(function(x){return x.toLowerCase().trim();});
+
+      // Detectar columnas
+      var iMes    = h.findIndex(function(x){return x==='mes';});
+      var iAnio   = h.findIndex(function(x){return x==='año'||x==='anio'||x==='year';});
+      var iTipoIn = h.findIndex(function(x){return x==='tipo ingresos'||x==='tipo ingreso';});
+      var iTipoEg = h.findIndex(function(x){return x==='tipo egresos'||x==='tipo egreso';});
+      // Columna monto ingreso (nombre exacto "ingresos" sin ser "tipo ingresos")
+      var iIng    = h.findIndex(function(x){return x==='ingresos';});
+      // Columna monto egreso (nombre exacto "egresos" sin ser "tipo egresos")
+      var iEgr    = h.findIndex(function(x){return x==='egresos';});
+      // Fallback para Mercury: columna "amount"
       var iAmt    = h.findIndex(function(x){return x==='amount';});
-      var iMes    = h.findIndex(function(x){return x==='mes';});
-      var iAnio   = h.findIndex(function(x){return x==='año'||x==='anio'||x==='year';});
-      var iTipoIn = h.findIndex(function(x){return x.includes('tipo ingreso');});
-      var iTipoEg = h.findIndex(function(x){return x.includes('tipo egreso');});
-      console.log('[Mercury] cols → Amt:'+iAmt+' Mes:'+iMes+' Año:'+iAnio+' TipoIn:'+iTipoIn+' TipoEg:'+iTipoEg);
-      if(iMes<0||iAnio<0){console.warn('[Mercury] Missing Mes/Año cols');return;}
 
+      console.log('['+sheetName+'] header idx='+hdrIdx+' | Mes:'+iMes+' Año:'+iAnio+' Ing:'+iIng+' Egr:'+iEgr+' Amt:'+iAmt+' TipoIn:'+iTipoIn+' TipoEg:'+iTipoEg);
+      if(iMes<0||iAnio<0){console.warn('['+sheetName+'] Sin columnas Mes/Año');return;}
+      if(iTipoIn<0&&iTipoEg<0){console.warn('['+sheetName+'] Sin columnas Tipo Ingresos / Tipo Egresos');return;}
+
+      var rowsOk=0, rowsSkip=0;
       rows.slice(hdrIdx+1).forEach(function(row){
-        if(!row[iMes]||!row[iAnio])return;
+        if(!row[iMes]||!row[iAnio]){rowsSkip++;return;}
         var mk=mkKey(row[iMes],row[iAnio]);
-        if(!mk)return;
-        var amt=iAmt>=0?cleanNum(row[iAmt]):0;
-        if(amt<=0)return;
-        var tin =(iTipoIn>=0?(row[iTipoIn]||''):'').trim();
-        var teg =(iTipoEg>=0?(row[iTipoEg]||''):'').trim();
+        if(!mk){rowsSkip++;return;}
 
-        if(tin&&tin.length>1&&tin!=='#N/A'){
-          var tl=tin.toLowerCase();
-          if(tl.includes('stripe'))                       newPas.Stripe[mk]=(newPas.Stripe[mk]||0)+amt;
-          else if(tl.includes('dlocal')||tl.includes('pingpong')) newPas.Dlocal[mk]=(newPas.Dlocal[mk]||0)+amt;
-          else if(tl.includes('cashback'))                newPas['Mercury Cashback'][mk]=(newPas['Mercury Cashback'][mk]||0)+amt;
-          else if(tl.includes('inversion lr'))            newPas['Inversion LR'][mk]=(newPas['Inversion LR'][mk]||0)+amt;
-          else if(tl.includes('inversion jt'))            newPas['Inversion JT'][mk]=(newPas['Inversion JT'][mk]||0)+amt;
-          else if(!tl.includes('interes')&&!tl.includes('global')){
-            if(!newSocios[tin])newSocios[tin]={};
-            newSocios[tin][mk]=(newSocios[tin][mk]||0)+amt;
-          }
-        }
-        if(teg&&teg.length>1&&teg!=='#N/A'){
-          if(!newEgresos[teg])newEgresos[teg]={};
-          newEgresos[teg][mk]=(newEgresos[teg][mk]||0)+amt;
-        }
-      });
-    })();
-
-    // ──────────────────────────────────────────────────
-    // GENERAL_GLOBAL
-    // Columns: Fecha | Egresos | Ingresos | Saldo | Tipo Ingresos | Tipo Egresos | Mes | Año
-    // Ingresos col = monto que entró  → socios que aportaron
-    // Egresos col  = monto que salió  → gastos
-    // ──────────────────────────────────────────────────
-    (function(){
-      var rows=parseCSV(tGlob);
-      if(rows.length<2) return;
-      var hdrIdx=-1;
-      for(var i=0;i<Math.min(rows.length,30);i++){
-        var r=rows[i].join(',').toLowerCase();
-        if(r.includes('fecha')&&r.includes('tipo ingreso')){hdrIdx=i;break;}
-      }
-      if(hdrIdx<0){console.warn('[Global] Header not found');return;}
-      var h=rows[hdrIdx].map(function(x){return x.toLowerCase().trim();});
-      var iIng    = h.findIndex(function(x){return x==='ingresos';});
-      var iEgr    = h.findIndex(function(x){return x==='egresos';});
-      var iMes    = h.findIndex(function(x){return x==='mes';});
-      var iAnio   = h.findIndex(function(x){return x==='año'||x==='anio'||x==='year';});
-      var iTipoIn = h.findIndex(function(x){return x.includes('tipo ingreso');});
-      var iTipoEg = h.findIndex(function(x){return x.includes('tipo egreso');});
-      console.log('[Global] cols → Ing:'+iIng+' Egr:'+iEgr+' Mes:'+iMes+' Año:'+iAnio+' TipoIn:'+iTipoIn+' TipoEg:'+iTipoEg);
-      if(iMes<0||iAnio<0){console.warn('[Global] Missing Mes/Año cols');return;}
-
-      rows.slice(hdrIdx+1).forEach(function(row){
-        if(!row[iMes]||!row[iAnio])return;
-        var mk=mkKey(row[iMes],row[iAnio]);
-        if(!mk)return;
         var tin=(iTipoIn>=0?(row[iTipoIn]||''):'').trim();
         var teg=(iTipoEg>=0?(row[iTipoEg]||''):'').trim();
 
-        // Ingresos: aportes de socios / pasarelas
+        // ── INGRESOS
         if(tin&&tin.length>1&&tin!=='#N/A'){
-          var amtIn=iIng>=0?cleanNum(row[iIng]):0;
+          // Preferir columna Ingresos; si no existe usar Amount
+          var amtIn=0;
+          if(iIng>=0) amtIn=cleanNum(row[iIng]);
+          if(amtIn<=0&&iAmt>=0) amtIn=cleanNum(row[iAmt]);
+
           if(amtIn>0){
+            rowsOk++;
             var tl=tin.toLowerCase();
-            if(tl.includes('stripe'))                       newPas.Stripe[mk]=(newPas.Stripe[mk]||0)+amtIn;
-            else if(tl.includes('dlocal')||tl.includes('pingpong')) newPas.Dlocal[mk]=(newPas.Dlocal[mk]||0)+amtIn;
-            else if(tl.includes('cashback'))                newPas['Mercury Cashback'][mk]=(newPas['Mercury Cashback'][mk]||0)+amtIn;
-            else if(tl.includes('inversion lr'))            newPas['Inversion LR'][mk]=(newPas['Inversion LR'][mk]||0)+amtIn;
-            else if(tl.includes('inversion jt'))            newPas['Inversion JT'][mk]=(newPas['Inversion JT'][mk]||0)+amtIn;
-            else if(!tl.includes('interes')&&!tl.includes('global')){
+            if(tl==='stripe sales'||tl.includes('stripe'))
+              newPas.Stripe[mk]=(newPas.Stripe[mk]||0)+amtIn;
+            else if(tl==='dlocal sales'||tl.includes('dlocal')||tl.includes('pingpong'))
+              newPas.Dlocal[mk]=(newPas.Dlocal[mk]||0)+amtIn;
+            else if(tl.includes('cashback'))
+              newPas['Mercury Cashback'][mk]=(newPas['Mercury Cashback'][mk]||0)+amtIn;
+            else if(tl.includes('inversion lr'))
+              newPas['Inversion LR'][mk]=(newPas['Inversion LR'][mk]||0)+amtIn;
+            else if(tl.includes('inversion jt'))
+              newPas['Inversion JT'][mk]=(newPas['Inversion JT'][mk]||0)+amtIn;
+            else if(!tl.includes('interes')&&!tl.includes('global66')&&!tl.includes('gastos global')){
+              // Es un socio
               if(!newSocios[tin])newSocios[tin]={};
               newSocios[tin][mk]=(newSocios[tin][mk]||0)+amtIn;
             }
           }
         }
-        // Egresos: gastos
+
+        // ── EGRESOS
         if(teg&&teg.length>1&&teg!=='#N/A'){
-          var amtEg=iEgr>=0?cleanNum(row[iEgr]):0;
+          // Preferir columna Egresos; si no existe usar Amount
+          var amtEg=0;
+          if(iEgr>=0) amtEg=cleanNum(row[iEgr]);
+          if(amtEg<=0&&iAmt>=0) amtEg=cleanNum(row[iAmt]);
+
           if(amtEg>0){
+            rowsOk++;
             if(!newEgresos[teg])newEgresos[teg]={};
             newEgresos[teg][mk]=(newEgresos[teg][mk]||0)+amtEg;
           }
         }
       });
-    })();
+      console.log('['+sheetName+'] procesadas='+rowsOk+' saltadas='+rowsSkip+
+        ' | socios='+Object.keys(newSocios).length+' egresos='+Object.keys(newEgresos).length);
+    }
 
-    // ──────────────────────────────────────────────────
-    // OTROS_CUENTAS
-    // Columns: Fecha | Egresos | Ingresos | Tipo Ingresos | Tipo Egresos | Mes | Año
-    // Misma lógica que General_Global
-    // ──────────────────────────────────────────────────
-    (function(){
-      var rows=parseCSV(tOtros);
-      if(rows.length<2) return;
-      var hdrIdx=-1;
-      for(var i=0;i<Math.min(rows.length,30);i++){
-        var r=rows[i].join(',').toLowerCase();
-        if(r.includes('fecha')&&r.includes('tipo ingreso')){hdrIdx=i;break;}
-      }
-      if(hdrIdx<0){console.warn('[Otros] Header not found');return;}
-      var h=rows[hdrIdx].map(function(x){return x.toLowerCase().trim();});
-      var iIng    = h.findIndex(function(x){return x==='ingresos';});
-      var iEgr    = h.findIndex(function(x){return x==='egresos';});
-      var iMes    = h.findIndex(function(x){return x==='mes';});
-      var iAnio   = h.findIndex(function(x){return x==='año'||x==='anio'||x==='year';});
-      var iTipoIn = h.findIndex(function(x){return x.includes('tipo ingreso');});
-      var iTipoEg = h.findIndex(function(x){return x.includes('tipo egreso');});
-      console.log('[Otros] cols → Ing:'+iIng+' Egr:'+iEgr+' Mes:'+iMes+' Año:'+iAnio+' TipoIn:'+iTipoIn+' TipoEg:'+iTipoEg);
-      if(iMes<0||iAnio<0){console.warn('[Otros] Missing Mes/Año cols');return;}
+    // Procesar las 3 hojas — newSocios/newEgresos/newPas se van ACUMULANDO
+    parseSheet(tMerc,  'Mercury USA');
+    parseSheet(tGlob,  'General_Global');
+    parseSheet(tOtros, 'Otros_Cuentas');
 
-      rows.slice(hdrIdx+1).forEach(function(row){
-        if(!row[iMes]||!row[iAnio])return;
-        var mk=mkKey(row[iMes],row[iAnio]);
-        if(!mk)return;
-        var tin=(iTipoIn>=0?(row[iTipoIn]||''):'').trim();
-        var teg=(iTipoEg>=0?(row[iTipoEg]||''):'').trim();
+    // Log totales finales para debug
+    var totalSocios=Object.values(newSocios).reduce(function(s,d){return s+Object.values(d).reduce(function(a,b){return a+b;},0);},0);
+    var totalEgr   =Object.values(newEgresos).reduce(function(s,d){return s+Object.values(d).reduce(function(a,b){return a+b;},0);},0);
+    console.log('[TOTAL] Socios acumulado=$'+Math.round(totalSocios)+' | Egresos=$'+Math.round(totalEgr));
 
-        if(tin&&tin.length>1&&tin!=='#N/A'){
-          var amtIn=iIng>=0?cleanNum(row[iIng]):0;
-          if(amtIn>0){
-            var tl=tin.toLowerCase();
-            if(tl.includes('stripe'))                       newPas.Stripe[mk]=(newPas.Stripe[mk]||0)+amtIn;
-            else if(tl.includes('dlocal')||tl.includes('pingpong')) newPas.Dlocal[mk]=(newPas.Dlocal[mk]||0)+amtIn;
-            else if(tl.includes('cashback'))                newPas['Mercury Cashback'][mk]=(newPas['Mercury Cashback'][mk]||0)+amtIn;
-            else if(tl.includes('inversion lr'))            newPas['Inversion LR'][mk]=(newPas['Inversion LR'][mk]||0)+amtIn;
-            else if(tl.includes('inversion jt'))            newPas['Inversion JT'][mk]=(newPas['Inversion JT'][mk]||0)+amtIn;
-            else if(!tl.includes('interes')&&!tl.includes('global')){
-              if(!newSocios[tin])newSocios[tin]={};
-              newSocios[tin][mk]=(newSocios[tin][mk]||0)+amtIn;
-            }
-          }
-        }
-        if(teg&&teg.length>1&&teg!=='#N/A'){
-          var amtEg=iEgr>=0?cleanNum(row[iEgr]):0;
-          if(amtEg>0){
-            if(!newEgresos[teg])newEgresos[teg]={};
-            newEgresos[teg][mk]=(newEgresos[teg][mk]||0)+amtEg;
-          }
-        }
-      });
-    })();
-
-    // ── Merge into globals (only replace if we got real data)
-    var hasSocios =Object.keys(newSocios).length>0;
-    var hasEgresos=Object.keys(newEgresos).length>0;
-    if(hasSocios) {Object.keys(SOCIOS).forEach(function(k){delete SOCIOS[k];});Object.assign(SOCIOS,newSocios);activeSocios=new Set(Object.keys(SOCIOS));}
-    if(hasEgresos){Object.keys(EGRESOS).forEach(function(k){delete EGRESOS[k];});Object.assign(EGRESOS,newEgresos);activeEgresos=new Set(Object.keys(EGRESOS));}
+    // Reemplazar globals solo si hay datos reales
+    if(Object.keys(newSocios).length>0){
+      Object.keys(SOCIOS).forEach(function(k){delete SOCIOS[k];});
+      Object.assign(SOCIOS,newSocios);
+      activeSocios=new Set(Object.keys(SOCIOS));
+    }
+    if(Object.keys(newEgresos).length>0){
+      Object.keys(EGRESOS).forEach(function(k){delete EGRESOS[k];});
+      Object.assign(EGRESOS,newEgresos);
+      activeEgresos=new Set(Object.keys(EGRESOS));
+    }
     Object.keys(newPas).forEach(function(k){PASARELAS[k]=newPas[k];});
 
-    // Rebuild months
+    // Reconstruir lista de meses cronológica
     var allMK=new Set();
-    [SOCIOS,EGRESOS,PASARELAS].forEach(function(obj){Object.values(obj).forEach(function(d){Object.keys(d).forEach(function(k){allMK.add(k);});});});
+    [SOCIOS,EGRESOS,PASARELAS].forEach(function(obj){
+      Object.values(obj).forEach(function(d){Object.keys(d).forEach(function(k){allMK.add(k);});});
+    });
     ALL_MONTHS.length=0;
-    Array.from(allMK).filter(function(k){return /^\d{4}-\d{1,2}$/.test(k);}).sort(function(a,b){var pa=a.split('-'),pb=b.split('-');return +pa[0]!==+pb[0]?+pa[0]-+pb[0]:+pa[1]-+pb[1];}).forEach(function(k){ALL_MONTHS.push(k);});
+    Array.from(allMK).filter(function(k){return /^\d{4}-\d{1,2}$/.test(k);})
+      .sort(function(a,b){var pa=a.split('-'),pb=b.split('-');return +pa[0]!==+pb[0]?+pa[0]-+pb[0]:+pa[1]-+pb[1];})
+      .forEach(function(k){ALL_MONTHS.push(k);});
     rebuildYearSelect();
 
     var now=new Date();
-    var ts2=now.toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'})+' '+now.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
+    var ts2=now.toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'})+' a las '+now.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
     document.getElementById('lastUpdated').textContent='Act. '+now.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
     document.getElementById('modeBadge').textContent='🟢 EN VIVO';
     document.getElementById('modeBadge').className='live-badge live';
     document.getElementById('liveDot').style.background='var(--green)';
     document.getElementById('dataBanner').className='banner live';
-    document.getElementById('dataBanner').innerHTML='<span>🟢</span><div>Datos actualizados desde <strong>3 hojas</strong> (Mercury USA · General_Global · Otros_Cuentas) el '+ts2+'. Haz clic en <strong>Actualizar</strong> para refrescar.</div>';
-    document.getElementById('dataSubtitle').textContent='Panel financiero en vivo · 3 cuentas · USD';
+    document.getElementById('dataBanner').innerHTML='<span>🟢</span><div>Datos actualizados desde <strong>3 hojas</strong> (Mercury USA · General_Global · Otros_Cuentas) el '+ts2+'. Socios consolidados: <strong>$'+Math.round(totalSocios).toLocaleString('es-CO')+'</strong>. Haz clic en <strong>Actualizar</strong> para refrescar.</div>';
+    document.getElementById('dataSubtitle').textContent='Panel financiero en vivo · 3 cuentas consolidadas · USD';
 
     setLoading(false);
     render();
-    showToast('Datos actualizados — 3 hojas cargadas ✓','ok');
+    showToast('3 hojas cargadas · Socios $'+Math.round(totalSocios).toLocaleString('es-CO')+' ✓','ok',4000);
 
   }catch(err){
     setLoading(false);
