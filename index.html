@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Seguros Fly — Panel Financiero</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root {
+  --bg: #0D0F12;
+  --bg2: #13161A;
+  --bg3: #1A1E24;
+  --bg4: #21262E;
+  --border: #2A3040;
+  --border2: #333C4D;
+  --text: #E8EDF5;
+  --text2: #8A95A8;
+  --text3: #525E70;
+  --green: #2DD4A0;
+  --green2: #1A9E78;
+  --red: #F06050;
+  --red2: #C04030;
+  --blue: #4DA8F5;
+  --blue2: #2A7ACC;
+  --purple: #9B8FEE;
+  --amber: #F5B840;
+  --mercury: #4DA8F5;
+  --global: #2DD4A0;
+  --otros: #9B8FEE;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;min-height:100vh}
+code,mono{font-family:'DM Mono',monospace}
+
+/* Layout */
+.shell{max-width:1100px;margin:0 auto;padding:24px 20px}
+
+/* Header */
+.header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:28px;flex-wrap:wrap;gap:16px}
+.header-left h1{font-size:20px;font-weight:600;letter-spacing:-.3px;color:var(--text)}
+.header-left p{font-size:13px;color:var(--text2);margin-top:3px}
+.header-right{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* Selects */
+select{background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:7px;padding:7px 12px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;outline:none}
+select:focus{border-color:var(--blue)}
+
+/* Account pills */
+.acct-bar{display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap}
+.acct-pill{display:flex;align-items:center;gap:7px;padding:7px 14px;border-radius:30px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-size:12px;font-weight:500;cursor:pointer;transition:all .15s}
+.acct-pill .dot{width:8px;height:8px;border-radius:50%}
+.acct-pill.active-mercury{background:#4DA8F522;border-color:var(--mercury);color:var(--mercury)}
+.acct-pill.active-global{background:#2DD4A022;border-color:var(--global);color:var(--global)}
+.acct-pill.active-otros{background:#9B8FEE22;border-color:var(--otros);color:var(--otros)}
+.acct-pill.active-all{background:#E8EDF510;border-color:var(--border2);color:var(--text)}
+
+/* Tabs */
+.tab-bar{display:flex;gap:4px;margin-bottom:24px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:0}
+.tab{padding:8px 16px;font-size:13px;font-weight:500;border-radius:8px 8px 0 0;border:none;background:transparent;color:var(--text3);cursor:pointer;transition:all .15s;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab:hover{color:var(--text2)}
+.tab.active{color:var(--text);border-bottom-color:var(--blue)}
+
+/* KPI Grid */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:24px}
+.kpi{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;position:relative;overflow:hidden}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent,var(--blue))}
+.kpi-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.kpi-val{font-size:20px;font-weight:600;font-family:'DM Mono',monospace;color:var(--accent,var(--text))}
+.kpi-sub{font-size:11px;color:var(--text3);margin-top:4px}
+.kpi-trend{font-size:11px;margin-top:4px}
+.up{color:var(--green)}.dn{color:var(--red)}.nt{color:var(--text3)}
+
+/* Chart area */
+.chart-section{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px}
+.section-title{font-size:12px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.07em;margin-bottom:14px}
+.chart-wrap{position:relative}
+
+/* Legend */
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px}
+.leg-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)}
+.leg-sq{width:9px;height:9px;border-radius:2px}
+
+/* Table */
+.tbl-section{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:16px}
+.tbl-head{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.tbl-head span{font-size:12px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.07em}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11px;font-weight:500;color:var(--text3);padding:10px 18px;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.05em}
+th:not(:first-child){text-align:right}
+td{padding:9px 18px;border-bottom:1px solid var(--border);color:var(--text)}
+td:not(:first-child){text-align:right;font-family:'DM Mono',monospace;font-size:12px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg3)}
+.pos{color:var(--green)}.neg{color:var(--red)}
+
+/* Bar mini */
+.bar-bg{background:var(--bg4);border-radius:2px;height:4px;margin-top:5px}
+.bar-fill{height:4px;border-radius:2px}
+
+/* Account badge */
+.acct-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 7px;border-radius:20px;font-weight:500}
+
+/* Chip filters */
+.chip-area{margin-bottom:16px}
+.chip-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.chip-wrap{display:flex;gap:6px;flex-wrap:wrap}
+.chip{padding:4px 12px;font-size:12px;border-radius:20px;border:1px solid var(--border2);background:var(--bg3);color:var(--text3);cursor:pointer;transition:all .12s}
+.chip.on{background:var(--bg4);border-color:var(--blue);color:var(--text)}
+
+/* Projection badge */
+.proj-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 8px;border-radius:4px;background:#4DA8F518;color:var(--blue);border:1px solid #4DA8F530;font-weight:500}
+
+/* Runway meter */
+.runway-bar{height:8px;border-radius:4px;background:var(--bg4);overflow:hidden;margin-top:8px}
+.runway-fill{height:100%;border-radius:4px;transition:width .4s}
+
+/* Alert strip */
+.alert{display:flex;align-items:flex-start;gap:10px;padding:12px 16px;border-radius:8px;border:1px solid;margin-bottom:12px;font-size:12px}
+.alert.warn{background:#F5B84010;border-color:#F5B84040;color:var(--amber)}
+.alert.good{background:#2DD4A010;border-color:#2DD4A040;color:var(--green)}
+.alert.bad{background:#F0605010;border-color:#F0605040;color:var(--red)}
+
+/* Scrollable on small screens */
+.scroll-x{overflow-x:auto}
+
+/* Divider */
+.divider{height:1px;background:var(--border);margin:16px 0}
+
+/* Multi-account comparison grid */
+.acct-compare{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.acct-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;border-top:3px solid}
+.acct-card.mercury{border-top-color:var(--mercury)}
+.acct-card.global{border-top-color:var(--global)}
+.acct-card.otros{border-top-color:var(--otros)}
+.acct-name{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px}
+.acct-bal{font-size:22px;font-weight:600;font-family:'DM Mono',monospace}
+.acct-detail{font-size:11px;color:var(--text3);margin-top:4px}
+
+/* Socios sub-tabs */
+.stab{padding:6px 14px;font-size:12px;font-weight:500;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text3);cursor:pointer;transition:all .12s}
+.stab:hover{color:var(--text2)}
+.stab.sactive{background:var(--bg4);border-color:var(--blue);color:var(--text)}
+
+@media(max-width:640px){
+  .acct-compare{grid-template-columns:1fr}
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  #sociosContent > div[style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important}
+  #sociosContent > div[style*="grid-template-columns:repeat(3"]{grid-template-columns:1fr!important}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <h1>Seguros Fly — Panel Financiero</h1>
+    <p>Consolidado de cuentas bancarias · <span id="lastUpdate" style="color:var(--blue)"></span></p>
+  </div>
+  <div class="header-right">
+    <select id="yearSel">
+      <option value="all">Todos los años</option>
+      <option value="2025">2025</option>
+      <option value="2026" selected>2026</option>
+    </select>
+    <select id="monthSel">
+      <option value="all">Todos los meses</option>
+    </select>
+  </div>
+</div>
+
+<!-- Account pills -->
+<div class="acct-bar">
+  <div class="acct-pill active-all" id="pill-all" onclick="setAcct('all',this)">
+    <span class="dot" style="background:var(--text2)"></span> Todas las cuentas
+  </div>
+  <div class="acct-pill" id="pill-mercury" onclick="setAcct('mercury',this)">
+    <span class="dot" style="background:var(--mercury)"></span> Mercury USA
+  </div>
+  <div class="acct-pill" id="pill-general" onclick="setAcct('general',this)">
+    <span class="dot" style="background:var(--global)"></span> General_Global
+  </div>
+  <div class="acct-pill" id="pill-otros" onclick="setAcct('otros',this)">
+    <span class="dot" style="background:var(--otros)"></span> Otros_Cuentas
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tab-bar">
+  <button class="tab active" onclick="setView('resumen',this)">Resumen</button>
+  <button class="tab" onclick="setView('cuentas',this)">Cuentas</button>
+  <button class="tab" onclick="setView('socios',this)">Socios</button>
+  <button class="tab" onclick="setView('pasarelas',this)">Pasarelas</button>
+  <button class="tab" onclick="setView('egresos',this)">Egresos</button>
+  <button class="tab" onclick="setView('proyeccion',this)">Proyección</button>
+</div>
+
+<!-- Dynamic content -->
+<div id="alerts"></div>
+<div id="kpiGrid" class="kpi-grid"></div>
+<div id="mainArea"></div>
+
+</div>
+
+<script>
+// ─── DATA ──────────────────────────────────────────────────────────────────
+
+const MES={1:'Ene',2:'Feb',3:'Mar',4:'Abr',5:'May',6:'Jun',7:'Jul',8:'Ago',9:'Sep',10:'Oct',11:'Nov',12:'Dic'};
+const ALL_MONTHS=['2025-3','2025-4','2025-5','2025-6','2025-7','2025-8','2025-9','2025-10','2025-11','2025-12','2026-1','2026-2','2026-3','2026-4'];
+
+// ── Mercury USA (cuenta original, datos reales)
+const MERCURY_INGRESOS = {
+  '2025-3':12,'2025-4':1229,'2025-5':1073,'2025-6':145,'2025-7':638,
+  '2025-8':996,'2025-9':2210,'2025-10':1782,'2025-11':1811,'2025-12':4224,
+  '2026-1':3245,'2026-2':3424,'2026-3':6990,'2026-4':9805,
+};
+const MERCURY_EGRESOS = {
+  '2025-3':0,'2025-4':91,'2025-5':887,'2025-6':1045,'2025-7':987,
+  '2025-8':812,'2025-9':1790,'2025-10':1364,'2025-11':2638,'2025-12':2609,
+  '2026-1':4670,'2026-2':3404,'2026-3':4853,'2026-4':5662,
+};
+// Saldo acumulado Mercury (balance running)
+const MERCURY_SALDO = {
+  '2025-3':12,'2025-4':1498,'2025-5':541,'2025-6':1443,'2025-7':5127,
+  '2025-8':305,'2025-9':327,'2025-10':1174,'2025-11':243,
+  '2026-1':574,'2026-2':0,'2026-3':17,'2026-4':1105,
+};
+
+// ── General_Global (datos placeholder — reemplazar con reales)
+// 💡 NOTA: estos son datos estimados. Reemplaza con los reales de tu hoja General_Global
+const GENERAL_INGRESOS = {
+  '2025-6':800,'2025-7':1200,'2025-8':950,'2025-9':1400,'2025-10':1600,
+  '2025-11':1800,'2025-12':2100,'2026-1':2400,'2026-2':2800,'2026-3':3200,'2026-4':3800,
+};
+const GENERAL_EGRESOS = {
+  '2025-6':400,'2025-7':600,'2025-8':700,'2025-9':900,'2025-10':1100,
+  '2025-11':1200,'2025-12':1400,'2026-1':1800,'2026-2':1600,'2026-3':2100,'2026-4':2500,
+};
+
+// ── Otros_Cuentas (datos placeholder — reemplazar con reales)
+// 💡 NOTA: estos son datos estimados. Reemplaza con los reales de tu hoja Otros_Cuentas
+const OTROS_INGRESOS = {
+  '2025-9':300,'2025-10':450,'2025-11':600,'2025-12':800,
+  '2026-1':900,'2026-2':1100,'2026-3':1300,'2026-4':1600,
+};
+const OTROS_EGRESOS = {
+  '2025-9':200,'2025-10':300,'2025-11':350,'2025-12':500,
+  '2026-1':600,'2026-2':700,'2026-3':800,'2026-4':1000,
+};
+
+// ── Socios
+const SOCIOS = {
+  'Felix Ballesteros': {'2025-6':45,'2025-7':488,'2025-8':212,'2025-10':820,'2025-11':410,'2025-12':769,'2026-1':314,'2026-2':255,'2026-3':430},
+  'Otoniel Martell':   {'2025-4':302,'2025-5':88,'2025-6':100,'2025-7':150,'2025-8':445,'2025-9':103,'2025-10':200,'2025-11':157,'2025-12':543,'2026-1':619,'2026-2':123,'2026-3':247,'2026-4':296},
+  'Wilker Casadiego':  {'2025-8':40,'2025-9':1069,'2025-10':612,'2025-11':120,'2025-12':42,'2026-1':284,'2026-2':276,'2026-3':428,'2026-4':300},
+  'Daniel Torres':     {'2025-5':985,'2025-11':298,'2025-12':600,'2026-2':200},
+  'Ricardo Torres':    {'2025-8':299,'2025-9':911,'2025-11':250,'2025-12':383,'2026-1':308,'2026-2':251,'2026-3':419,'2026-4':268},
+  'Jhojan Torres':     {'2025-3':12,'2025-4':927,'2025-9':127,'2025-10':150,'2025-11':576,'2025-12':540,'2026-1':313,'2026-2':276,'2026-3':580},
+};
+
+// ── Egresos detalle
+const EGRESOS = {
+  'Google Ads':       {'2025-10':110,'2025-11':556,'2025-12':837,'2026-1':1916,'2026-2':1804,'2026-3':2207,'2026-4':1232},
+  'WTA':              {'2025-12':97,'2026-1':1162,'2026-3':603,'2026-4':775},
+  'Analista Mkt':     {'2026-1':400,'2026-2':400,'2026-3':500,'2026-4':500},
+  'Asesor':           {'2025-11':120,'2025-12':400,'2026-1':462,'2026-2':149,'2026-3':480,'2026-4':1612},
+  'Facebook':         {'2025-10':330,'2025-11':485,'2025-12':80,'2026-1':153,'2026-2':228,'2026-3':403,'2026-4':758},
+  'Jhon Programador': {'2025-5':749,'2025-6':753,'2025-7':748,'2025-8':751,'2025-9':752,'2025-11':751},
+  'Movigoo':          {'2025-12':452,'2026-2':204,'2026-3':102},
+  'Digitalocean':     {'2025-8':13,'2025-9':50,'2025-10':78,'2025-11':75,'2025-12':78,'2026-1':78,'2026-2':93,'2026-3':102,'2026-4':105},
+  'Net2phone':        {'2026-1':194,'2026-3':109,'2026-4':219},
+  'Envato':           {'2025-10':13,'2025-12':42,'2026-1':42,'2026-2':42,'2026-3':42,'2026-4':42},
+  'Claude IA':        {'2025-8':10,'2025-10':21,'2025-11':20,'2025-12':20,'2026-1':20,'2026-2':20,'2026-3':20,'2026-4':20},
+  'VERCEL':           {'2025-11':20,'2025-12':20,'2026-1':20,'2026-2':20,'2026-3':20,'2026-4':20},
+  'Airalo E-Sim':     {'2025-12':15,'2026-1':9,'2026-2':85,'2026-3':71,'2026-4':58},
+  'Willy Zabaleta':   {'2025-10':550,'2025-11':550,'2025-12':550},
+};
+
+// ── Pasarelas
+const PASARELAS = {
+  'Stripe':           {'2025-12':1347,'2026-1':1370,'2026-2':1359,'2026-3':3955,'2026-4':4276},
+  'Dlocal':           {'2026-2':652,'2026-3':386,'2026-4':3304},
+  'Mercury Cashback': {'2025-10':10,'2025-11':16,'2025-12':26,'2026-1':37,'2026-2':31,'2026-3':44,'2026-4':45},
+};
+
+// ── Proyección (datos del sheet Capital)
+const PROYECCION_I = {'2026-1':1890,'2026-2':1512,'2026-3':2387,'2026-4':1800};
+const PROYECCION_E = {'2026-1':4382,'2026-2':636,'2026-3':1225,'2026-4':6249};
+
+// ─── STATE ─────────────────────────────────────────────────────────────────
+let currentView = 'resumen';
+let currentAcct = 'all';
+let activeChart = null;
+let activeChart2 = null;
+let activeEgresos = new Set(Object.keys(EGRESOS));
+
+document.getElementById('lastUpdate').textContent = new Date().toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'});
+
+// ─── MONTH SELECTOR ────────────────────────────────────────────────────────
+const monthSel = document.getElementById('monthSel');
+ALL_MONTHS.forEach(k => {
+  const [y,m] = k.split('-');
+  const opt = document.createElement('option');
+  opt.value = k; opt.textContent = `${MES[+m]} ${y}`;
+  monthSel.appendChild(opt);
+});
+
+// ─── HELPERS ───────────────────────────────────────────────────────────────
+const fmt = n => '$' + Math.round(n).toLocaleString('es-CO');
+const fmtK = n => Math.abs(n) >= 1000 ? '$' + (n/1000).toFixed(1).replace('.0','') + 'k' : fmt(n);
+const lbl = k => { const [y,m] = k.split('-'); return `${MES[+m]} '${y.slice(2)}`; };
+
+function getMonths() {
+  const yr = document.getElementById('yearSel').value;
+  const mn = document.getElementById('monthSel').value;
+  return ALL_MONTHS.filter(k => {
+    const [y,m] = k.split('-');
+    if (yr !== 'all' && y !== yr) return false;
+    if (mn !== 'all' && k !== mn) return false;
+    return true;
+  });
+}
+
+function getIngresos(k) {
+  if (currentAcct === 'mercury') return (MERCURY_INGRESOS[k]||0);
+  if (currentAcct === 'general') return (GENERAL_INGRESOS[k]||0);
+  if (currentAcct === 'otros')   return (OTROS_INGRESOS[k]||0);
+  return (MERCURY_INGRESOS[k]||0) + (GENERAL_INGRESOS[k]||0) + (OTROS_INGRESOS[k]||0);
+}
+function getEgresos(k) {
+  if (currentAcct === 'mercury') return (MERCURY_EGRESOS[k]||0);
+  if (currentAcct === 'general') return (GENERAL_EGRESOS[k]||0);
+  if (currentAcct === 'otros')   return (OTROS_EGRESOS[k]||0);
+  return (MERCURY_EGRESOS[k]||0) + (GENERAL_EGRESOS[k]||0) + (OTROS_EGRESOS[k]||0);
+}
+
+function killCharts() {
+  if (activeChart) { activeChart.destroy(); activeChart = null; }
+  if (activeChart2) { activeChart2.destroy(); activeChart2 = null; }
+}
+
+function mkChart(id, cfg) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return null;
+  return new Chart(ctx, cfg);
+}
+
+function setKPI(items) {
+  document.getElementById('kpiGrid').innerHTML = items.map(({label,val,sub,color,trend}) => `
+    <div class="kpi" style="--accent:${color}">
+      <div class="kpi-label">${label}</div>
+      <div class="kpi-val">${val}</div>
+      ${sub ? `<div class="kpi-sub">${sub}</div>` : ''}
+      ${trend !== undefined ? `<div class="kpi-trend ${trend > 0 ? 'up' : trend < 0 ? 'dn' : 'nt'}">${trend > 0 ? '▲' : trend < 0 ? '▼' : '●'} ${Math.abs(trend)}%</div>` : ''}
+    </div>`).join('');
+}
+
+function setAlerts(items) {
+  document.getElementById('alerts').innerHTML = items.map(({type,msg}) =>
+    `<div class="alert ${type}"><span style="font-size:14px">${type==='warn'?'⚠':'type'==='good'?'✓':'●'}</span> ${msg}</div>`
+  ).join('');
+}
+
+function acctBadge(acct) {
+  const map = {mercury:['var(--mercury)','Mercury'],general:['var(--global)','Global'],otros:['var(--otros)','Otros']};
+  const [c,n] = map[acct]||['var(--text2)','—'];
+  return `<span class="acct-badge" style="background:${c}20;color:${c};border:1px solid ${c}40">${n}</span>`;
+}
+
+// ─── VIEW / ACCT SWITCHERS ─────────────────────────────────────────────────
+function setView(v, el) {
+  currentView = v;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  render();
+}
+
+function setAcct(a, el) {
+  currentAcct = a;
+  document.querySelectorAll('.acct-pill').forEach(p => {
+    p.className = 'acct-pill';
+  });
+  if (a === 'all') el.className = 'acct-pill active-all';
+  else if (a === 'mercury') el.className = 'acct-pill active-mercury';
+  else if (a === 'general') el.className = 'acct-pill active-global';
+  else if (a === 'otros') el.className = 'acct-pill active-otros';
+  render();
+}
+
+// ─── MAIN RENDER ───────────────────────────────────────────────────────────
+function render() {
+  killCharts();
+  const months = getMonths();
+  const labels = months.map(lbl);
+  if (currentView === 'resumen')    doResumen(months, labels);
+  else if (currentView === 'cuentas')   doCuentas(months, labels);
+  else if (currentView === 'socios')    doSocios(months, labels);
+  else if (currentView === 'pasarelas') doPasarelas(months, labels);
+  else if (currentView === 'egresos')   doEgresos(months, labels);
+  else if (currentView === 'proyeccion') doProyeccion(months, labels);
+}
+
+// ─── RESUMEN ───────────────────────────────────────────────────────────────
+function doResumen(months, labels) {
+  const tI = months.reduce((s,k) => s + getIngresos(k), 0);
+  const tE = months.reduce((s,k) => s + getEgresos(k), 0);
+  const bal = tI - tE;
+  const ratio = tI > 0 ? Math.round(tE/tI*100) : 0;
+  const avgI = months.length ? tI/months.length : 0;
+  const lastM = months[months.length-1];
+  const lastI = lastM ? getIngresos(lastM) : 0;
+  const lastE = lastM ? getEgresos(lastM) : 0;
+  const prevM = months[months.length-2];
+  const prevI = prevM ? getIngresos(prevM) : 0;
+  const trendI = prevI > 0 ? Math.round((lastI-prevI)/prevI*100) : 0;
+
+  // Alerts
+  const alerts = [];
+  if (ratio > 80) alerts.push({type:'bad', msg:`Ratio gasto/ingreso del <b>${ratio}%</b> — los egresos están muy cerca de los ingresos.`});
+  else if (ratio > 60) alerts.push({type:'warn', msg:`Ratio gasto/ingreso del <b>${ratio}%</b> — monitorear tendencia.`});
+  if (bal > 0) alerts.push({type:'good', msg:`Balance positivo de <b>${fmt(bal)}</b> en el periodo seleccionado.`});
+  setAlerts(alerts);
+
+  setKPI([
+    {label:'Ingresos totales', val:fmtK(tI), sub:`${months.length} mes(es)`, color:'var(--green)', trend:trendI},
+    {label:'Egresos totales', val:fmtK(tE), sub:'Total gastos', color:'var(--red)'},
+    {label:'Balance neto', val:fmtK(bal), sub: bal>=0?'Superávit':'Déficit', color: bal>=0?'var(--green)':'var(--red)'},
+    {label:'Ratio gasto/ingreso', val:ratio+'%', sub:'Ideal < 70%', color: ratio<70?'var(--green)':ratio<85?'var(--amber)':'var(--red)'},
+    {label:'Prom. ingreso/mes', val:fmtK(avgI), sub:'Periodo sel.', color:'var(--blue)'},
+  ]);
+
+  document.getElementById('mainArea').innerHTML = `
+    <div class="chart-section">
+      <div class="section-title">Ingresos vs Egresos — evolución mensual</div>
+      <div class="chart-wrap" style="height:260px"><canvas id="c1"></canvas></div>
+      <div class="legend" id="leg1"></div>
+    </div>
+    <div class="tbl-section">
+      <div class="tbl-head"><span>Resumen mensual</span></div>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Mes</th><th>Ingresos</th><th>Egresos</th><th>Balance</th><th>Ratio</th></tr></thead>
+        <tbody>${months.map(k => {
+          const i=getIngresos(k), e=getEgresos(k), b=i-e, r=i>0?Math.round(e/i*100):0;
+          return `<tr><td>${lbl(k)}</td><td class="pos">${fmt(i)}</td><td class="neg">${fmt(e)}</td>
+            <td class="${b>=0?'pos':'neg'}">${fmt(b)}</td>
+            <td style="color:${r<70?'var(--green)':r<85?'var(--amber)':'var(--red)'}">${r}%</td></tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>`;
+
+  activeChart = mkChart('c1', {type:'bar', data:{labels, datasets:[
+    {label:'Ingresos', data:months.map(k=>getIngresos(k)), backgroundColor:'#2DD4A044', borderColor:'var(--green)', borderWidth:1.5, borderRadius:4},
+    {label:'Egresos',  data:months.map(k=>getEgresos(k)),  backgroundColor:'#F0605044', borderColor:'var(--red)',   borderWidth:1.5, borderRadius:4},
+  ]}, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{
+      x:{ticks:{color:'#525E70',font:{size:11}},grid:{display:false}},
+      y:{ticks:{callback:v=>'$'+Math.round(v/1000)+'k',color:'#525E70',font:{size:11}},grid:{color:'#2A3040'}},
+    }}});
+
+  document.getElementById('leg1').innerHTML =
+    `<span class="leg-item"><span class="leg-sq" style="background:var(--green)"></span>Ingresos</span>
+     <span class="leg-item"><span class="leg-sq" style="background:var(--red)"></span>Egresos</span>`;
+}
+
+// ─── CUENTAS ───────────────────────────────────────────────────────────────
+function doCuentas(months, labels) {
+  setAlerts([{type:'warn', msg:'Los datos de <b>General_Global</b> y <b>Otros_Cuentas</b> son estimados. Actualiza los valores en el código con los datos reales de tu hoja de cálculo.'}]);
+
+  const accounts = [
+    {key:'mercury', label:'Mercury USA', colorI:'var(--mercury)', colorE:'#4DA8F566',
+     I:MERCURY_INGRESOS, E:MERCURY_EGRESOS},
+    {key:'general', label:'General_Global', colorI:'var(--global)', colorE:'#2DD4A066',
+     I:GENERAL_INGRESOS, E:GENERAL_EGRESOS},
+    {key:'otros',   label:'Otros_Cuentas', colorI:'var(--purple)', colorE:'#9B8FEE66',
+     I:OTROS_INGRESOS,   E:OTROS_EGRESOS},
+  ];
+
+  const totals = accounts.map(a => ({
+    ...a,
+    tI: months.reduce((s,k) => s+(a.I[k]||0),0),
+    tE: months.reduce((s,k) => s+(a.E[k]||0),0),
+  }));
+  const grandI = totals.reduce((s,a) => s+a.tI, 0);
+  const grandE = totals.reduce((s,a) => s+a.tE, 0);
+
+  setKPI([
+    {label:'Total ingresos', val:fmtK(grandI), sub:'Todas las cuentas', color:'var(--green)'},
+    {label:'Total egresos',  val:fmtK(grandE), sub:'Todas las cuentas', color:'var(--red)'},
+    {label:'Balance consolidado', val:fmtK(grandI-grandE), sub:(grandI-grandE)>=0?'Superávit':'Déficit', color:(grandI-grandE)>=0?'var(--green)':'var(--red)'},
+  ]);
+
+  document.getElementById('mainArea').innerHTML = `
+    <div class="acct-compare">
+      ${totals.map(a => {
+        const bal = a.tI - a.tE;
+        const ratio = a.tI > 0 ? Math.round(a.tE/a.tI*100) : 0;
+        return `<div class="acct-card ${a.key}">
+          <div class="acct-name" style="color:${a.colorI}">${a.label}</div>
+          <div class="acct-bal" style="color:${a.colorI}">${fmtK(a.tI)}</div>
+          <div class="acct-detail">Ingresos · ${months.length} mes(es)</div>
+          <div class="divider" style="margin:10px 0"></div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
+            <span style="color:var(--text3)">Egresos</span><span class="neg">${fmtK(a.tE)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
+            <span style="color:var(--text3)">Balance</span><span class="${bal>=0?'pos':'neg'}">${fmtK(bal)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px">
+            <span style="color:var(--text3)">Ratio gasto</span>
+            <span style="color:${ratio<70?'var(--green)':ratio<85?'var(--amber)':'var(--red)'}">${ratio}%</span>
+          </div>
+          <div class="runway-bar" style="margin-top:10px">
+            <div class="runway-fill" style="width:${Math.min(100,ratio)}%;background:${ratio<70?'var(--green)':ratio<85?'var(--amber)':'var(--red)'}"></div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="chart-section">
+      <div class="section-title">Ingresos por cuenta — mensual</div>
+      <div class="chart-wrap" style="height:260px"><canvas id="c1"></canvas></div>
+      <div class="legend" id="leg1"></div>
+    </div>
+    <div class="tbl-section">
+      <div class="tbl-head"><span>Comparativa por cuenta y mes</span></div>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Mes</th><th>Mercury</th><th>General_Global</th><th>Otros_Cuentas</th><th>Total</th></tr></thead>
+        <tbody>${months.map(k => {
+          const m=MERCURY_INGRESOS[k]||0, g=GENERAL_INGRESOS[k]||0, o=OTROS_INGRESOS[k]||0;
+          return `<tr><td>${lbl(k)}</td>
+            <td style="color:var(--mercury)">${m?fmt(m):'—'}</td>
+            <td style="color:var(--global)">${g?fmt(g):'—'}</td>
+            <td style="color:var(--purple)">${o?fmt(o):'—'}</td>
+            <td class="pos">${fmt(m+g+o)}</td></tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>`;
+
+  activeChart = mkChart('c1', {type:'bar', data:{labels, datasets:[
+    {label:'Mercury',  data:months.map(k=>MERCURY_INGRESOS[k]||0), backgroundColor:'#4DA8F555', borderColor:'var(--mercury)', borderWidth:1.5, borderRadius:3},
+    {label:'General_Global', data:months.map(k=>GENERAL_INGRESOS[k]||0), backgroundColor:'#2DD4A055', borderColor:'var(--global)', borderWidth:1.5, borderRadius:3},
+    {label:'Otros_Cuentas', data:months.map(k=>OTROS_INGRESOS[k]||0), backgroundColor:'#9B8FEE55', borderColor:'var(--purple)', borderWidth:1.5, borderRadius:3},
+  ]}, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{
+      x:{ticks:{color:'#525E70',font:{size:11}},grid:{display:false}},
+      y:{stacked:false, ticks:{callback:v=>'$'+Math.round(v/1000)+'k',color:'#525E70',font:{size:11}},grid:{color:'#2A3040'}},
+    }}});
+
+  document.getElementById('leg1').innerHTML = totals.map(a =>
+    `<span class="leg-item"><span class="leg-sq" style="background:${a.colorI}"></span>${a.label}</span>`
+  ).join('');
+}
+
+// ─── SOCIOS ────────────────────────────────────────────────────────────────
+// Totales reales tomados de hoja Capital
+const SOCIOS_CAPITAL = {
+  'Felix Ballesteros': {total:3743, y2025:2744, y2026:999,
+    meses:{'2025-6':45,'2025-7':488,'2025-8':212,'2025-10':820,'2025-11':410,'2025-12':769,'2026-1':314,'2026-2':255,'2026-3':430}},
+  'Otoniel Martell':   {total:3374, y2025:2089, y2026:1285,
+    meses:{'2025-4':302,'2025-5':88,'2025-6':100,'2025-7':150,'2025-8':445,'2025-9':103,'2025-10':200,'2025-11':157,'2025-12':543,'2026-1':619,'2026-2':123,'2026-3':247,'2026-4':296}},
+  'Wilker Casadiego':  {total:3171, y2025:1882, y2026:1289,
+    meses:{'2025-8':40,'2025-9':1069,'2025-10':612,'2025-11':120,'2025-12':42,'2026-1':284,'2026-2':276,'2026-3':428,'2026-4':300}},
+  'Daniel Torres':     {total:2083, y2025:1883, y2026:200,
+    meses:{'2025-5':985,'2025-11':298,'2025-12':600,'2026-2':200}},
+  'Ricardo Torres':    {total:3089, y2025:1843, y2026:1246,
+    meses:{'2025-8':299,'2025-9':911,'2025-11':250,'2025-12':383,'2026-1':308,'2026-2':251,'2026-3':419,'2026-4':268}},
+  'Jhojan Torres':     {total:3501, y2025:2332, y2026:1169,
+    meses:{'2025-3':12,'2025-4':927,'2025-9':127,'2025-10':150,'2025-11':576,'2025-12':540,'2026-1':313,'2026-2':276,'2026-3':580}},
+};
+
+// Sub-vistas dentro de Socios
+let sociosSubView = 'resumen'; // 'resumen' | 'detalle' | 'ie'
+
+function setSociosSubView(v, el) {
+  sociosSubView = v;
+  document.querySelectorAll('.stab').forEach(t => t.classList.remove('sactive'));
+  el.classList.add('sactive');
+  const months = getMonths();
+  renderSociosContent(months, months.map(lbl));
+}
+
+function doSocios(months, labels) {
+  setAlerts([]);
+  sociosSubView = sociosSubView || 'resumen';
+
+  // Calcular totales del periodo seleccionado usando datos reales de Capital
+  const yr  = document.getElementById('yearSel').value;
+  const mn  = document.getElementById('monthSel').value;
+
+  // KPIs: usar totales reales de Capital filtrados por año si aplica
+  const socios = Object.entries(SOCIOS_CAPITAL);
+  const grandTotal = yr === '2025' ? socios.reduce((s,[,d])=>s+d.y2025,0)
+                   : yr === '2026' ? socios.reduce((s,[,d])=>s+d.y2026,0)
+                   : socios.reduce((s,[,d])=>s+d.total,0);
+
+  const byPeriod = socios.map(([name,d]) => {
+    const t = mn !== 'all' ? (d.meses[mn]||0)
+            : yr === '2025' ? d.y2025
+            : yr === '2026' ? d.y2026
+            : d.total;
+    return {name, t, color:'', d};
+  });
+  const SC = ['#4DA8F5','#2DD4A0','#F06050','#9B8FEE','#F5B840','#D4537E'];
+  byPeriod.forEach((s,i) => s.color = SC[i%SC.length]);
+  byPeriod.sort((a,b) => b.t - a.t);
+  const gP = byPeriod.reduce((s,x)=>s+x.t,0);
+
+  setKPI([
+    {label:'Total aportes', val:fmtK(gP), sub: mn!=='all'?lbl(mn): yr!=='all'?yr:'Histórico completo', color:'var(--blue)'},
+    {label:'Líder del periodo', val:byPeriod[0]?.name.split(' ')[0]||'—', sub:fmtK(byPeriod[0]?.t||0), color:'var(--green)'},
+    {label:'Share promedio', val:(100/6).toFixed(1)+'%', sub:'Equitativo entre 6', color:'var(--purple)'},
+    {label:'Total histórico', val:fmtK(socios.reduce((s,[,d])=>s+d.total,0)), sub:'Mar 2025 – Abr 2026', color:'var(--amber)'},
+  ]);
+
+  // Sub-tabs
+  const subTabsHtml = `
+    <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
+      <button class="stab ${sociosSubView==='resumen'?'sactive':''}" onclick="setSociosSubView('resumen',this)">Resumen</button>
+      <button class="stab ${sociosSubView==='mensual'?'sactive':''}" onclick="setSociosSubView('mensual',this)">Por mes</button>
+      <button class="stab ${sociosSubView==='ie'?'sactive':''}" onclick="setSociosSubView('ie',this)">Ingresos &amp; Egresos</button>
+    </div>`;
+
+  document.getElementById('mainArea').innerHTML = subTabsHtml + `<div id="sociosContent"></div>`;
+  renderSociosContent(months, labels);
+}
+
+function renderSociosContent(months, labels) {
+  const SC = ['#4DA8F5','#2DD4A0','#F06050','#9B8FEE','#F5B840','#D4537E'];
+  const yr  = document.getElementById('yearSel').value;
+  const mn  = document.getElementById('monthSel').value;
+  killCharts();
+
+  const byPeriod = Object.entries(SOCIOS_CAPITAL).map(([name,d],i) => {
+    const t = mn !== 'all' ? (d.meses[mn]||0)
+            : yr === '2025' ? d.y2025
+            : yr === '2026' ? d.y2026
+            : d.total;
+    return {name, t, color:SC[i%SC.length], d};
+  }).sort((a,b) => b.t - a.t);
+  const gP = byPeriod.reduce((s,x)=>s+x.t,0);
+  const maxT = Math.max(...byPeriod.map(x=>x.t),1);
+
+  if (sociosSubView === 'resumen') {
+    // Donut share + tabla resumen
+    document.getElementById('sociosContent').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div class="chart-section">
+          <div class="section-title">Share por socio — periodo</div>
+          <div class="chart-wrap" style="height:240px"><canvas id="c1"></canvas></div>
+          <div class="legend" id="leg1" style="justify-content:center;margin-top:12px"></div>
+        </div>
+        <div class="chart-section">
+          <div class="section-title">Comparativa histórica 2025 vs 2026</div>
+          <div class="chart-wrap" style="height:240px"><canvas id="c2"></canvas></div>
+        </div>
+      </div>
+      <div class="tbl-section">
+        <div class="tbl-head"><span>Inversión total por socio</span></div>
+        <div class="scroll-x"><table>
+          <thead><tr><th>Socio</th><th>Histórico total</th><th>2025</th><th>2026</th><th>Share %</th><th>Prom./mes activo</th></tr></thead>
+          <tbody>${byPeriod.map(x => {
+            const histTotal = x.d.total;
+            const grandHist = Object.values(SOCIOS_CAPITAL).reduce((s,d)=>s+d.total,0);
+            const pct = grandHist ? (histTotal/grandHist*100).toFixed(1) : 0;
+            const actMeses = Object.keys(x.d.meses).length;
+            return `<tr>
+              <td><span style="display:inline-flex;align-items:center;gap:7px">
+                <span style="width:8px;height:8px;border-radius:50%;background:${x.color};display:inline-block"></span>
+                ${x.name}
+              </span></td>
+              <td style="font-weight:600">${fmt(histTotal)}</td>
+              <td style="color:var(--text2)">${fmt(x.d.y2025)}</td>
+              <td style="color:var(--blue)">${fmt(x.d.y2026)}</td>
+              <td>
+                <span style="font-family:'DM Mono',monospace;font-size:12px;color:${x.color}">${pct}%</span>
+                <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(histTotal/Math.max(grandHist,1)*100)}%;background:${x.color}"></div></div>
+              </td>
+              <td style="color:var(--text2)">${actMeses?fmt(histTotal/actMeses):'—'}</td>
+            </tr>`;
+          }).join('')}
+          <tr style="background:var(--bg3);font-weight:600">
+            <td>TOTAL</td>
+            <td>${fmt(Object.values(SOCIOS_CAPITAL).reduce((s,d)=>s+d.total,0))}</td>
+            <td style="color:var(--text2)">${fmt(Object.values(SOCIOS_CAPITAL).reduce((s,d)=>s+d.y2025,0))}</td>
+            <td style="color:var(--blue)">${fmt(Object.values(SOCIOS_CAPITAL).reduce((s,d)=>s+d.y2026,0))}</td>
+            <td style="color:var(--text2)">100%</td>
+            <td>—</td>
+          </tr>
+          </tbody>
+        </table></div>
+      </div>`;
+
+    const grandHist = Object.values(SOCIOS_CAPITAL).reduce((s,d)=>s+d.total,0);
+    activeChart = mkChart('c1', {type:'doughnut', data:{
+      labels: byPeriod.map(x=>x.name.split(' ')[0]),
+      datasets:[{data: byPeriod.map(x=>x.d.total), backgroundColor: byPeriod.map(x=>x.color+'CC'),
+        borderColor: byPeriod.map(x=>x.color), borderWidth:1.5, hoverOffset:6}]
+    }, options:{responsive:true,maintainAspectRatio:false,cutout:'62%',
+      plugins:{legend:{display:false},tooltip:{callbacks:{
+        label: ctx => ` ${ctx.label}: ${fmt(ctx.raw)} (${(ctx.raw/grandHist*100).toFixed(1)}%)`
+      }}}}});
+
+    activeChart2 = mkChart('c2', {type:'bar', data:{
+      labels: Object.keys(SOCIOS_CAPITAL).map(n=>n.split(' ')[0]),
+      datasets:[
+        {label:'2025', data:Object.values(SOCIOS_CAPITAL).map(d=>d.y2025), backgroundColor:'#8A95A844', borderColor:'#8A95A8', borderWidth:1.5, borderRadius:3},
+        {label:'2026', data:Object.values(SOCIOS_CAPITAL).map(d=>d.y2026), backgroundColor:'#4DA8F555', borderColor:'var(--blue)', borderWidth:1.5, borderRadius:3},
+      ]
+    }, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:'#525E70',font:{size:11}},grid:{display:false}},
+        y:{ticks:{callback:v=>'$'+Math.round(v/1000)+'k',color:'#525E70',font:{size:11}},grid:{color:'#2A3040'}},
+      }}});
+
+    document.getElementById('leg1').innerHTML = byPeriod.map(x=>
+      `<span class="leg-item"><span class="leg-sq" style="background:${x.color}"></span>${x.name.split(' ')[0]}</span>`
+    ).join('');
+
+  } else if (sociosSubView === 'mensual') {
+    // Evolución mensual por socio
+    document.getElementById('sociosContent').innerHTML = `
+      <div class="chart-section">
+        <div class="section-title">Aportes por socio — evolución mensual</div>
+        <div class="chart-wrap" style="height:260px"><canvas id="c1"></canvas></div>
+        <div class="legend" id="leg1"></div>
+      </div>
+      <div class="tbl-section">
+        <div class="tbl-head"><span>Detalle mensual por socio</span></div>
+        <div class="scroll-x"><table>
+          <thead><tr><th>Mes</th>${Object.keys(SOCIOS_CAPITAL).map(n=>`<th>${n.split(' ')[0]}</th>`).join('')}<th>Total mes</th></tr></thead>
+          <tbody>${months.map(k => {
+            const vals = Object.entries(SOCIOS_CAPITAL).map(([,d]) => d.meses[k]||0);
+            const tot = vals.reduce((s,v)=>s+v,0);
+            return `<tr><td>${lbl(k)}</td>
+              ${vals.map((v,i)=>`<td style="color:${v?SC[i%SC.length]:'var(--text3)'}">${v?fmt(v):'—'}</td>`).join('')}
+              <td style="font-weight:600;color:var(--text)">${tot?fmt(tot):'—'}</td>
+            </tr>`;
+          }).join('')}
+          <tr style="background:var(--bg3);font-weight:600">
+            <td>TOTAL</td>
+            ${Object.entries(SOCIOS_CAPITAL).map(([,d],i)=>{
+              const t = months.reduce((s,k)=>s+(d.meses[k]||0),0);
+              return `<td style="color:${SC[i%SC.length]}">${fmt(t)}</td>`;
+            }).join('')}
+            <td>${fmt(months.reduce((s,k)=>s+Object.values(SOCIOS_CAPITAL).reduce((ss,d)=>ss+(d.meses[k]||0),0),0))}</td>
+          </tr>
+          </tbody>
+        </table></div>
+      </div>`;
+
+    activeChart = mkChart('c1', {type:'bar', data:{labels,
+      datasets: Object.entries(SOCIOS_CAPITAL).map(([name,d],i) => ({
+        label:name, data:months.map(k=>d.meses[k]||0),
+        backgroundColor:SC[i%SC.length]+'88', borderColor:SC[i%SC.length], borderWidth:1, borderRadius:3,
+      }))
+    }, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{
+        x:{stacked:true,ticks:{color:'#525E70',font:{size:11}},grid:{display:false}},
+        y:{stacked:true,ticks:{callback:v=>'$'+Math.round(v/1000)+'k',color:'#525E70',font:{size:11}},grid:{color:'#2A3040'}},
+      }}});
+
+    document.getElementById('leg1').innerHTML = Object.keys(SOCIOS_CAPITAL).map((n,i)=>
+      `<span class="leg-item"><span class="leg-sq" style="background:${SC[i%SC.length]}"></span>${n.split(' ')[0]}</span>`
+    ).join('');
+
+  } else if (sociosSubView === 'ie') {
+    // Ingresos & Egresos estilo hoja Capital
+    const totalI_hist = Object.values(SOCIOS_CAPITAL).reduce((s,d)=>s+d.total,0);
+
+    // Stripe + Dlocal + Cashback como ingresos externos
+    const stripeTotal = months.reduce((s,k)=>s+(PASARELAS['Stripe'][k]||0),0);
+    const dlocalTotal = months.reduce((s,k)=>s+(PASARELAS['Dlocal'][k]||0),0);
+    const cashbackTotal = months.reduce((s,k)=>s+(PASARELAS['Mercury Cashback'][k]||0),0);
+    const sociosTotal  = Object.values(SOCIOS_CAPITAL).reduce((s,d)=>s+months.reduce((ss,k)=>ss+(d.meses[k]||0),0),0);
+    const totalI = sociosTotal + stripeTotal + dlocalTotal + cashbackTotal;
+
+    const totalE = months.reduce((s,k)=>s+getEgresos(k),0);
+    const balance = totalI - totalE;
+
+    const ingRows = [
+      {label:'Aportes socios', val:sociosTotal, color:'var(--blue)', pct: totalI?sociosTotal/totalI*100:0},
+      {label:'Stripe Sales', val:stripeTotal, color:'#4DA8F5', pct: totalI?stripeTotal/totalI*100:0},
+      {label:'Dlocal Sales', val:dlocalTotal, color:'var(--global)', pct: totalI?dlocalTotal/totalI*100:0},
+      {label:'Mercury Cashback', val:cashbackTotal, color:'#888', pct: totalI?cashbackTotal/totalI*100:0},
+    ].filter(r=>r.val>0).sort((a,b)=>b.val-a.val);
+
+    const egrKeys = Object.keys(EGRESOS);
+    const egrRows = egrKeys.map(name => ({
+      name, val:months.reduce((s,k)=>s+(EGRESOS[name][k]||0),0)
+    })).filter(r=>r.val>0).sort((a,b)=>b.val-a.val);
+    const EC2 = ['#E24B4A','#D85A30','#BA7517','#EF9F27','#A32D2D','#639922','#0F6E56','#185FA5','#534AB7','#993556','#3B6D11','#4B1528','#7F77DD','#D4537E'];
+
+    document.getElementById('sociosContent').innerHTML = `
+      <!-- Resumen I/E -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+        <div class="kpi" style="--accent:var(--green)">
+          <div class="kpi-label">Total Ingresos</div>
+          <div class="kpi-val">${fmtK(totalI)}</div>
+          <div class="kpi-sub">${months.length} mes(es)</div>
+        </div>
+        <div class="kpi" style="--accent:var(--red)">
+          <div class="kpi-label">Total Egresos</div>
+          <div class="kpi-val">${fmtK(totalE)}</div>
+          <div class="kpi-sub">Todos los gastos</div>
+        </div>
+        <div class="kpi" style="--accent:${balance>=0?'var(--green)':'var(--red)'}">
+          <div class="kpi-label">Saldo Neto</div>
+          <div class="kpi-val">${fmtK(balance)}</div>
+          <div class="kpi-sub">${balance>=0?'✓ Superávit':'✗ Déficit'}</div>
+        </div>
+      </div>
+
+      <!-- Dos columnas I vs E -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+
+        <!-- INGRESOS -->
+        <div class="tbl-section">
+          <div class="tbl-head">
+            <span>Ingresos</span>
+            <span style="color:var(--green);font-family:'DM Mono',monospace;font-size:13px">${fmt(totalI)}</span>
+          </div>
+          <table>
+            <thead><tr><th>Fuente</th><th>Monto</th><th>Share</th></tr></thead>
+            <tbody>
+              ${ingRows.map(r=>`<tr>
+                <td><span style="display:inline-flex;align-items:center;gap:6px">
+                  <span style="width:7px;height:7px;border-radius:50%;background:${r.color};display:inline-block"></span>
+                  ${r.label}
+                </span></td>
+                <td class="pos">${fmt(r.val)}</td>
+                <td>
+                  <span style="font-size:11px;color:${r.color}">${r.pct.toFixed(1)}%</span>
+                  <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(r.pct)}%;background:${r.color}"></div></div>
+                </td>
+              </tr>`).join('')}
+              <tr style="background:var(--bg3)"><td style="font-weight:600">Total</td><td class="pos" style="font-weight:600">${fmt(totalI)}</td><td style="color:var(--text3)">100%</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- EGRESOS -->
+        <div class="tbl-section">
+          <div class="tbl-head">
+            <span>Egresos</span>
+            <span style="color:var(--red);font-family:'DM Mono',monospace;font-size:13px">${fmt(totalE)}</span>
+          </div>
+          <table>
+            <thead><tr><th>Categoría</th><th>Monto</th><th>Share</th></tr></thead>
+            <tbody>
+              ${egrRows.map((r,i)=>`<tr>
+                <td><span style="display:inline-flex;align-items:center;gap:6px">
+                  <span style="width:7px;height:7px;border-radius:50%;background:${EC2[i%EC2.length]};display:inline-block"></span>
+                  ${r.name}
+                </span></td>
+                <td class="neg">${fmt(r.val)}</td>
+                <td>
+                  <span style="font-size:11px;color:${EC2[i%EC2.length]}">${totalE?(r.val/totalE*100).toFixed(1):0}%</span>
+                  <div class="bar-bg"><div class="bar-fill" style="width:${totalE?Math.round(r.val/totalE*100):0}%;background:${EC2[i%EC2.length]}"></div></div>
+                </td>
+              </tr>`).join('')}
+              <tr style="background:var(--bg3)"><td style="font-weight:600">Total</td><td class="neg" style="font-weight:600">${fmt(totalE)}</td><td style="color:var(--text3)">100%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Chart I vs E mensual -->
+      <div class="chart-section">
+        <div class="section-title">Ingresos vs Egresos por mes</div>
+        <div class="chart-wrap" style="height:240px"><canvas id="c1"></canvas></div>
+        <div class="legend" id="leg1"></div>
+      </div>
+
+      <!-- Socios share en periodo -->
+      <div class="tbl-section">
+        <div class="tbl-head">
+          <span>Share por socio — periodo seleccionado</span>
+          <span style="color:var(--blue);font-family:'DM Mono',monospace;font-size:13px">${fmt(sociosTotal)}</span>
+        </div>
+        <table>
+          <thead><tr><th>Socio</th><th>Total 2025</th><th>Total 2026</th><th>Histórico</th><th>% del total socios</th></tr></thead>
+          <tbody>${Object.entries(SOCIOS_CAPITAL).map(([name,d],i)=>{
+            const grandH = Object.values(SOCIOS_CAPITAL).reduce((s,dd)=>s+dd.total,0);
+            const pct = grandH?(d.total/grandH*100).toFixed(1):0;
+            return `<tr>
+              <td><span style="display:inline-flex;align-items:center;gap:7px">
+                <span style="width:8px;height:8px;border-radius:50%;background:${SC[i%SC.length]};display:inline-block"></span>
+                ${name}
+              </span></td>
+              <td style="color:var(--text2)">${fmt(d.y2025)}</td>
+              <td style="color:var(--blue)">${fmt(d.y2026)}</td>
+              <td style="font-weight:600">${fmt(d.total)}</td>
+              <td>
+                <span style="color:${SC[i%SC.length]};font-family:'DM Mono',monospace">${pct}%</span>
+                <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(d.total/Math.max(grandH,1)*100)}%;background:${SC[i%SC.length]}"></div></div>
+              </td>
+            </tr>`;
+          }).join('')}
+          <tr style="background:var(--bg3);font-weight:600">
+            <td>TOTAL</td>
+            <td style="color:var(--text2)">${fmt(Object.values(SOCIOS_CAPITAL).reduce((s,d)=>s+d.y2025,0))}</td>
+            <td style="color:var(--blue)">${fmt(Object.values(SOCIOS_CAPITAL).reduce((s,d)=>s+d.y2026,0))}</td>
+            <td>${fmt(Object.values(SOCIOS_CAPITAL).reduce((s,d)=>s+d.total,0))}</td>
+            <td style="color:var(--text3)">100%</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>`;
+
+    // Chart I vs E mensual
+    const socMonthly = months.map(k => Object.values(SOCIOS_CAPITAL).reduce((s,d)=>s+(d.meses[k]||0),0));
+    const strMonthly = months.map(k => (PASARELAS['Stripe'][k]||0)+(PASARELAS['Dlocal'][k]||0)+(PASARELAS['Mercury Cashback'][k]||0));
+    const egrMonthly = months.map(k => getEgresos(k));
+
+    activeChart = mkChart('c1', {type:'bar', data:{labels, datasets:[
+      {label:'Socios', data:socMonthly, backgroundColor:'#4DA8F544', borderColor:'var(--blue)', borderWidth:1.5, borderRadius:3, stack:'i'},
+      {label:'Pasarelas', data:strMonthly, backgroundColor:'#2DD4A044', borderColor:'var(--green)', borderWidth:1.5, borderRadius:3, stack:'i'},
+      {label:'Egresos', data:egrMonthly, backgroundColor:'#F0605044', borderColor:'var(--red)', borderWidth:1.5, borderRadius:3, stack:'e'},
+    ]}, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:'#525E70',font:{size:11}},grid:{display:false}},
+        y:{ticks:{callback:v=>'$'+Math.round(v/1000)+'k',color:'#525E70',font:{size:11}},grid:{color:'#2A3040'}},
+      }}});
+
+    document.getElementById('leg1').innerHTML = `
+      <span class="leg-item"><span class="leg-sq" style="background:var(--blue)"></span>Socios</span>
+      <span class="leg-item"><span class="leg-sq" style="background:var(--green)"></span>Pasarelas</span>
+      <span class="leg-item"><span class="leg-sq" style="background:var(--red)"></span>Egresos</span>`;
+  }
+}
+
+// ─── PASARELAS ─────────────────────────────────────────────────────────────
+function doPasarelas(months, labels) {
+  setAlerts([]);
+  const rows = [
+    {name:'Stripe', color:'#4DA8F5', data:PASARELAS['Stripe'], tipo:'Pasarela'},
+    {name:'Dlocal', color:'#2DD4A0', data:PASARELAS['Dlocal'], tipo:'Pasarela'},
+    {name:'Mercury Cashback', color:'#888', data:PASARELAS['Mercury Cashback'], tipo:'Cashback'},
+  ].map(r => ({...r, total:months.reduce((s,k)=>s+(r.data[k]||0),0)})).sort((a,b)=>b.total-a.total);
+  const grand = rows.reduce((s,r)=>s+r.total,0);
+
+  setKPI([
+    {label:'Total pasarelas', val:fmtK(grand), sub:`${months.length} mes(es)`, color:'var(--blue)'},
+    {label:'Stripe', val:fmtK(rows.find(r=>r.name==='Stripe')?.total||0), sub:`${grand?Math.round((rows.find(r=>r.name==='Stripe')?.total||0)/grand*100):0}% del total`, color:'#4DA8F5'},
+    {label:'Dlocal', val:fmtK(rows.find(r=>r.name==='Dlocal')?.total||0), sub:`${grand?Math.round((rows.find(r=>r.name==='Dlocal')?.total||0)/grand*100):0}% del total`, color:'#2DD4A0'},
+  ]);
+
+  document.getElementById('mainArea').innerHTML = `
+    <div class="chart-section">
+      <div class="section-title">Volumen por pasarela — mensual</div>
+      <div class="chart-wrap" style="height:260px"><canvas id="c1"></canvas></div>
+      <div class="legend" id="leg1"></div>
+    </div>
+    <div class="tbl-section">
+      <div class="tbl-head"><span>Detalle pasarelas</span></div>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Pasarela</th><th>Tipo</th><th>Total</th><th>% del total</th><th>Prom./mes</th></tr></thead>
+        <tbody>${rows.map(r => {
+          const pct = grand?(r.total/grand*100).toFixed(1):0;
+          return `<tr>
+            <td><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:8px;height:8px;border-radius:50%;background:${r.color};display:inline-block"></span>${r.name}</span></td>
+            <td><span style="font-size:10px;padding:2px 8px;border-radius:20px;background:${r.color}20;color:${r.color};border:1px solid ${r.color}40">${r.tipo}</span></td>
+            <td class="pos">${fmt(r.total)}</td>
+            <td><span>${pct}%</span><div class="bar-bg"><div class="bar-fill" style="width:${Math.round(r.total/Math.max(grand,1)*100)}%;background:${r.color}"></div></div></td>
+            <td style="color:var(--text2)">${fmt(months.length?r.total/months.length:0)}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>`;
+
+  activeChart = mkChart('c1', {type:'bar', data:{labels,
+    datasets:rows.map(r => ({
+      label:r.name, data:months.map(k=>r.data[k]||0),
+      backgroundColor:r.color+'55', borderColor:r.color, borderWidth:1.5, borderRadius:4,
+    }))
+  }, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{
+      x:{ticks:{color:'#525E70',font:{size:11}},grid:{display:false}},
+      y:{ticks:{callback:v=>'$'+Math.round(v/1000)+'k',color:'#525E70',font:{size:11}},grid:{color:'#2A3040'}},
+    }}});
+
+  document.getElementById('leg1').innerHTML = rows.map(r =>
+    `<span class="leg-item"><span class="leg-sq" style="background:${r.color}"></span>${r.name}</span>`
+  ).join('');
+}
+
+// ─── EGRESOS ───────────────────────────────────────────────────────────────
+function doEgresos(months, labels) {
+  setAlerts([]);
+  const EC = ['#E24B4A','#D85A30','#BA7517','#EF9F27','#A32D2D','#639922','#0F6E56','#185FA5','#534AB7','#993556','#3B6D11','#4B1528','#7F77DD','#D4537E'];
+  const keys = [...activeEgresos];
+  const totals = keys.map((name,i) => ({
+    name, color:EC[Object.keys(EGRESOS).indexOf(name)%EC.length],
+    total:months.reduce((s,k) => s+(EGRESOS[name][k]||0), 0),
+  })).sort((a,b) => b.total-a.total);
+  const grand = totals.reduce((s,t) => s+t.total, 0);
+
+  setKPI([
+    {label:'Total egresos', val:fmtK(grand), sub:`${keys.length} categorías`, color:'var(--red)'},
+    {label:'Mayor gasto', val:totals[0]?.name||'—', sub:fmtK(totals[0]?.total||0), color:'#E24B4A'},
+    {label:'Prom./mes', val:fmtK(months.length?grand/months.length:0), sub:'Seleccionados', color:'var(--amber)'},
+  ]);
+
+  const chips = `<div class="chip-area">
+    <div class="chip-label">Filtrar categorías</div>
+    <div class="chip-wrap">
+      <span class="chip ${activeEgresos.size===Object.keys(EGRESOS).length?'on':''}" onclick="toggleAllE()">Todos</span>
+      ${Object.keys(EGRESOS).map((e,i) => `<span class="chip ${activeEgresos.has(e)?'on':''}" onclick="toggleE('${e}')">${e}</span>`).join('')}
+    </div>
+  </div>`;
+
+  document.getElementById('mainArea').innerHTML = chips + `
+    <div class="chart-section">
+      <div class="section-title">Egresos por categoría — mensual</div>
+      <div class="chart-wrap" style="height:260px"><canvas id="c1"></canvas></div>
+      <div class="legend" id="leg1"></div>
+    </div>
+    <div class="tbl-section">
+      <div class="tbl-head"><span>Detalle de egresos</span></div>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Categoría</th><th>Total</th><th>% del total</th><th>Prom./mes activo</th></tr></thead>
+        <tbody>${totals.filter(t=>t.total>0).map(t => {
+          const pct = grand?(t.total/grand*100).toFixed(1):0;
+          const actMons = months.filter(k=>EGRESOS[t.name]?.[k]>0).length;
+          return `<tr>
+            <td><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:8px;height:8px;border-radius:50%;background:${t.color};display:inline-block"></span>${t.name}</span></td>
+            <td class="neg">${fmt(t.total)}</td>
+            <td><span>${pct}%</span><div class="bar-bg"><div class="bar-fill" style="width:${Math.round(t.total/Math.max(grand,1)*100)}%;background:${t.color}"></div></div></td>
+            <td style="color:var(--text2)">${actMons?fmt(t.total/actMons):'—'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>`;
+
+  activeChart = mkChart('c1', {type:'bar', data:{labels,
+    datasets:totals.filter(t=>t.total>0).map(t => ({
+      label:t.name, data:months.map(k=>EGRESOS[t.name][k]||0),
+      backgroundColor:t.color+'88', borderColor:t.color, borderWidth:1, borderRadius:3,
+    }))
+  }, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{
+      x:{stacked:true,ticks:{color:'#525E70',font:{size:11}},grid:{display:false}},
+      y:{stacked:true,ticks:{callback:v=>'$'+Math.round(v/1000)+'k',color:'#525E70',font:{size:11}},grid:{color:'#2A3040'}},
+    }}});
+
+  document.getElementById('leg1').innerHTML = totals.filter(t=>t.total>0).map(t =>
+    `<span class="leg-item"><span class="leg-sq" style="background:${t.color}"></span>${t.name}</span>`
+  ).join('');
+}
+
+function toggleE(name) {
+  activeEgresos.has(name) ? activeEgresos.delete(name) : activeEgresos.add(name);
+  const months = getMonths(); doEgresos(months, months.map(lbl));
+}
+function toggleAllE() {
+  activeEgresos = activeEgresos.size === Object.keys(EGRESOS).length ? new Set() : new Set(Object.keys(EGRESOS));
+  const months = getMonths(); doEgresos(months, months.map(lbl));
+}
+
+// ─── PROYECCIÓN ────────────────────────────────────────────────────────────
+function doProyeccion(months, labels) {
+  setAlerts([{type:'warn', msg:'La proyección se basa en los datos de la hoja <b>Capital</b>. Las barras punteadas indican meses futuros sin datos reales confirmados.'}]);
+
+  // Calcular tendencia de los últimos 3 meses reales
+  const realMonths = months.filter(k => getIngresos(k) > 0);
+  const last3 = realMonths.slice(-3);
+  const avgRecentI = last3.length ? last3.reduce((s,k)=>s+getIngresos(k),0)/last3.length : 0;
+  const avgRecentE = last3.length ? last3.reduce((s,k)=>s+getEgresos(k),0)/last3.length : 0;
+
+  // Proyección simple: tendencia lineal de los últimos meses
+  const futureMonths = ['2026-5','2026-6','2026-7','2026-8'];
+  const futureLabels = futureMonths.map(lbl);
+  const growthI = last3.length >= 2 ? (getIngresos(last3[last3.length-1]) - getIngresos(last3[0])) / last3.length : 0;
+  const growthE = last3.length >= 2 ? (getEgresos(last3[last3.length-1]) - getEgresos(last3[0])) / last3.length : 0;
+
+  const projI = futureMonths.map((_, i) => Math.max(0, Math.round(avgRecentI + growthI*(i+1))));
+  const projE = futureMonths.map((_, i) => Math.max(0, Math.round(avgRecentE + growthE*(i+1))));
+
+  const allLabels = [...labels, ...futureLabels];
+  const realI = months.map(k => getIngresos(k));
+  const realE = months.map(k => getEgresos(k));
+  const totalRealI = realI.reduce((s,v)=>s+v,0);
+  const totalProjI = projI.reduce((s,v)=>s+v,0);
+  const runway = avgRecentE > 0 ? Math.round(totalRealI / avgRecentE) : 0;
+
+  setKPI([
+    {label:'Prom. ingreso reciente', val:fmtK(avgRecentI), sub:'Últimos 3 meses', color:'var(--green)'},
+    {label:'Prom. egreso reciente',  val:fmtK(avgRecentE), sub:'Últimos 3 meses', color:'var(--red)'},
+    {label:'Proyección próx. 4 meses', val:fmtK(totalProjI), sub:'Basado en tendencia', color:'var(--blue)'},
+    {label:'Tendencia de ingresos', val:growthI>=0?'▲ Creciendo':'▼ Cayendo', sub:fmtK(Math.abs(growthI))+'/mes', color:growthI>=0?'var(--green)':'var(--red)'},
+  ]);
+
+  document.getElementById('mainArea').innerHTML = `
+    <div class="chart-section">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div class="section-title" style="margin:0">Ingresos reales + proyección</div>
+        <span class="proj-badge">★ Proyección basada en tendencia</span>
+      </div>
+      <div class="chart-wrap" style="height:280px"><canvas id="c1"></canvas></div>
+      <div class="legend" id="leg1"></div>
+    </div>
+    <div class="chart-section">
+      <div class="section-title">Proyección vs real — hoja Capital</div>
+      <div class="chart-wrap" style="height:220px"><canvas id="c2"></canvas></div>
+    </div>
+    <div class="tbl-section">
+      <div class="tbl-head"><span>Detalle proyección</span></div>
+      <div class="scroll-x"><table>
+        <thead><tr><th>Mes</th><th>Tipo</th><th>Ing. proyectado</th><th>Egr. proyectado</th><th>Balance est.</th></tr></thead>
+        <tbody>
+          ${months.map((k,i) => `<tr>
+            <td>${lbl(k)}</td>
+            <td><span style="font-size:10px;padding:2px 7px;border-radius:4px;background:#2DD4A020;color:var(--green)">Real</span></td>
+            <td class="pos">${fmt(realI[i])}</td><td class="neg">${fmt(realE[i])}</td>
+            <td class="${realI[i]-realE[i]>=0?'pos':'neg'}">${fmt(realI[i]-realE[i])}</td>
+          </tr>`).join('')}
+          ${futureMonths.map((k,i) => `<tr style="opacity:.7">
+            <td>${lbl(k)}</td>
+            <td><span style="font-size:10px;padding:2px 7px;border-radius:4px;background:#4DA8F520;color:var(--blue)">Proyectado</span></td>
+            <td style="color:var(--blue)">${fmt(projI[i])}</td><td style="color:var(--amber)">${fmt(projE[i])}</td>
+            <td class="${projI[i]-projE[i]>=0?'pos':'neg'}">${fmt(projI[i]-projE[i])}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
+
+  activeChart = mkChart('c1', {
+    type:'bar',
+    data:{
+      labels:allLabels,
+      datasets:[
+        {label:'Ingresos reales', data:[...realI,...futureMonths.map(()=>null)], backgroundColor:'#2DD4A044', borderColor:'var(--green)', borderWidth:1.5, borderRadius:4},
+        {label:'Ingresos proyectados', data:[...months.map(()=>null),...projI], backgroundColor:'#4DA8F533', borderColor:'#4DA8F5', borderWidth:1.5, borderDash:[4,4], borderRadius:4},
+        {label:'Egresos reales', data:[...realE,...futureMonths.map(()=>null)], backgroundColor:'#F0605033', borderColor:'var(--red)', borderWidth:1.5, borderRadius:4},
+        {label:'Egresos proyectados', data:[...months.map(()=>null),...projE], backgroundColor:'#F5B84033', borderColor:'var(--amber)', borderWidth:1, borderRadius:4},
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:'#525E70',font:{size:11}},grid:{display:false}},
+        y:{ticks:{callback:v=>'$'+Math.round(v/1000)+'k',color:'#525E70',font:{size:11}},grid:{color:'#2A3040'}},
+      }}
+  });
+
+  document.getElementById('leg1').innerHTML = `
+    <span class="leg-item"><span class="leg-sq" style="background:var(--green)"></span>Ingresos reales</span>
+    <span class="leg-item"><span class="leg-sq" style="background:var(--blue)"></span>Ingresos proyectados</span>
+    <span class="leg-item"><span class="leg-sq" style="background:var(--red)"></span>Egresos reales</span>
+    <span class="leg-item"><span class="leg-sq" style="background:var(--amber)"></span>Egresos proyectados</span>`;
+
+  // Chart 2: Real vs proyección hoja Capital (meses 2026)
+  const capMonths = ['2026-1','2026-2','2026-3','2026-4'].filter(k => months.includes(k));
+  if (capMonths.length) {
+    activeChart2 = mkChart('c2', {type:'bar', data:{
+      labels:capMonths.map(lbl),
+      datasets:[
+        {label:'Real', data:capMonths.map(k=>getIngresos(k)), backgroundColor:'#2DD4A055', borderColor:'var(--green)', borderWidth:1.5, borderRadius:4},
+        {label:'Proyección Capital', data:capMonths.map(k=>PROYECCION_I[k]||0), backgroundColor:'#4DA8F533', borderColor:'var(--blue)', borderWidth:1.5, borderRadius:4},
+      ]
+    }, options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:'#525E70',font:{size:11}},grid:{display:false}},
+        y:{ticks:{callback:v=>'$'+Math.round(v/1000)+'k',color:'#525E70',font:{size:11}},grid:{color:'#2A3040'}},
+      }}});
+  } else {
+    document.querySelector('#c2')?.closest('.chart-section')?.remove();
+  }
+}
+
+// ─── INIT ──────────────────────────────────────────────────────────────────
+document.getElementById('yearSel').addEventListener('change', render);
+document.getElementById('monthSel').addEventListener('change', render);
+render();
+</script>
+</body>
+</html>
