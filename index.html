@@ -138,8 +138,10 @@ tr:hover td{background:var(--bg3)}
 /* ═══════════════════════════════════════
    SHEET CONFIG — conectado a tu Sheets
 ═══════════════════════════════════════ */
-var SHEET_ID = '1-9073LxXGKAxXvwoUbcbwqklTKZAMpa4cVkpsqEmX3M';
+var SHEET_ID    = '1-9073LxXGKAxXvwoUbcbwqklTKZAMpa4cVkpsqEmX3M';
 var GID_MERCURY = '1150506311';
+var GID_GLOBAL  = '266580265';
+var GID_OTROS   = '820646854';
 
 /* ═══════════════════════════════════════
    DATOS DE RESPALDO (ultima lectura real)
@@ -238,7 +240,25 @@ function parseCSV(text){
 
 function cleanNum(s){
   if(!s)return 0;
-  var n=parseFloat(String(s).replace(/[$\s]/g,'').replace(/\./g,'').replace(',','.'));
+  var str=String(s).replace(/[$\s]/g,'').trim();
+  var n;
+  if(str.indexOf(',')>-1&&str.indexOf('.')>-1){
+    // Both separators: whichever is last is the decimal
+    if(str.lastIndexOf('.')>str.lastIndexOf(',')){
+      n=parseFloat(str.replace(/,/g,''));           // 1,509.86 → en-US
+    } else {
+      n=parseFloat(str.replace(/\./g,'').replace(',','.'));  // 1.509,86 → es-CO
+    }
+  } else if(str.indexOf(',')>-1){
+    var parts=str.split(',');
+    if(parts.length===2&&parts[1].length<=2){
+      n=parseFloat(str.replace(',','.'));            // 1,50 → decimal comma
+    } else {
+      n=parseFloat(str.replace(/,/g,''));            // 1,500 → thousands comma
+    }
+  } else {
+    n=parseFloat(str);
+  }
   return isNaN(n)?0:Math.abs(n);
 }
 
@@ -259,108 +279,229 @@ function mkKey(mes,anio){
 ═══════════════════════════════════════ */
 async function reloadFromSheet(){
   setLoading(true,'Conectando con Google Sheets...');
-  var url='https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/export?format=csv&gid='+GID_MERCURY;
+  var base='https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/export?format=csv&gid=';
+  var ts='&t='+Date.now();
+
   try{
-    var res=await fetch(url+'&t='+Date.now());
-    if(!res.ok)throw new Error('HTTP '+res.status+'. Verifica que el Sheet sea publico (cualquier persona con el enlace puede ver).');
-    var text=await res.text();
+    // ── fetch all 3 sheets in parallel
+    setLoading(true,'Descargando 3 hojas...');
+    var [rMerc,rGlob,rOtros]=await Promise.all([
+      fetch(base+GID_MERCURY+ts),
+      fetch(base+GID_GLOBAL+ts),
+      fetch(base+GID_OTROS+ts)
+    ]);
+    if(!rMerc.ok) throw new Error('Mercury: HTTP '+rMerc.status+'. Verifica que el Sheet sea público.');
+    if(!rGlob.ok) throw new Error('General_Global: HTTP '+rGlob.status);
+    if(!rOtros.ok) throw new Error('Otros_Cuentas: HTTP '+rOtros.status);
+
     setLoading(true,'Procesando datos...');
-    var rows=parseCSV(text);
-    if(rows.length<2)throw new Error('El Sheet parece vacio.');
+    var [tMerc,tGlob,tOtros]=await Promise.all([rMerc.text(),rGlob.text(),rOtros.text()]);
 
-    // Find header row (has "Date" and "Tipo Ingresos" or "Mes")
-    var hdrIdx=-1;
-    for(var i=0;i<Math.min(rows.length,20);i++){
-      var r=rows[i].join(',').toLowerCase();
-      if(r.includes('date')&&r.includes('mes')){hdrIdx=i;break;}
-    }
-    if(hdrIdx<0){
-      // Try to find the transaction table by looking for "Tipo Ingresos" header
-      for(var i=0;i<Math.min(rows.length,50);i++){
+    var newSocios={}, newEgresos={};
+    var newPas={Stripe:{},Dlocal:{},'Mercury Cashback':{},'Inversion LR':{},'Inversion JT':{}};
+
+    // ──────────────────────────────────────────────────
+    // MERCURY USA
+    // Columns: Date(UTC) | Amount | ... | Tipo Ingresos | Tipo Egresos | ... | Mes | Año | Key
+    // Amount = absolute value of transaction
+    // Tipo Ingresos = label when money comes IN  (socios, Stripe, Dlocal, Cashback...)
+    // Tipo Egresos  = label when money goes OUT  (Google ads, Facebook, WTA...)
+    // ──────────────────────────────────────────────────
+    (function(){
+      var rows=parseCSV(tMerc);
+      if(rows.length<2) return;
+      var hdrIdx=-1;
+      for(var i=0;i<Math.min(rows.length,30);i++){
         var r=rows[i].join(',').toLowerCase();
-        if(r.includes('tipo ingresos')&&r.includes('tipo egresos')){hdrIdx=i;break;}
+        if((r.includes('date')||r.includes('fecha'))&&r.includes('mes')&&r.includes('tipo')){hdrIdx=i;break;}
       }
-    }
-    if(hdrIdx<0)throw new Error('No se encontro la fila de encabezado. Verifica que la hoja Mercury USA tenga las columnas correctas.');
-
-    var header=rows[hdrIdx].map(function(h){return h.toLowerCase().trim();});
-    var iAmount=header.findIndex(function(h){return h==='amount'||h.includes('monto');});
-    var iMes=header.findIndex(function(h){return h==='mes';});
-    var iAnio=header.findIndex(function(h){return h==='año'||h==='anio'||h==='year';});
-    var iTipoIn=header.findIndex(function(h){return h.includes('tipo ingreso')||h.includes('socio abono')||h.includes('abono');});
-    var iTipoEg=header.findIndex(function(h){return h.includes('tipo egreso')||h.includes('debito')||h.includes('debitos');});
-
-    if(iMes<0||iAnio<0)throw new Error('No se encontraron las columnas Mes y Ano. Revisa el encabezado de la hoja Mercury USA.');
-
-    var newSocios={},newEgresos={},newPas={Stripe:{},Dlocal:{},'Mercury Cashback':{},'Inversion LR':{},'Inversion JT':{}};
-
-    rows.slice(hdrIdx+1).forEach(function(row){
-      if(!row[iMes]&&!row[iAnio])return;
-      var mk=mkKey(row[iMes],row[iAnio]);
-      if(!mk)return;
-      var amount=iAmount>=0?cleanNum(row[iAmount]):0;
-      if(amount<=0)return;
-      var tipoIn=iTipoIn>=0?(row[iTipoIn]||'').trim():'';
-      var tipoEg=iTipoEg>=0?(row[iTipoEg]||'').trim():'';
-
-      if(tipoIn){
-        var tl=tipoIn.toLowerCase();
-        if(tl.includes('stripe')){newPas.Stripe[mk]=(newPas.Stripe[mk]||0)+amount;}
-        else if(tl.includes('dlocal')||tl.includes('pingpong')){newPas.Dlocal[mk]=(newPas.Dlocal[mk]||0)+amount;}
-        else if(tl.includes('cashback')){newPas['Mercury Cashback'][mk]=(newPas['Mercury Cashback'][mk]||0)+amount;}
-        else if(tl.includes('inversion lr')||tl.includes('inversion_lr')){newPas['Inversion LR'][mk]=(newPas['Inversion LR'][mk]||0)+amount;}
-        else if(tl.includes('inversion jt')||tl.includes('inversion_jt')){newPas['Inversion JT'][mk]=(newPas['Inversion JT'][mk]||0)+amount;}
-        else if(tipoIn&&!tl.includes('interese')&&!tl.includes('global')){
-          if(!newSocios[tipoIn])newSocios[tipoIn]={};
-          newSocios[tipoIn][mk]=(newSocios[tipoIn][mk]||0)+amount;
+      if(hdrIdx<0){
+        for(var i=0;i<Math.min(rows.length,30);i++){
+          var r=rows[i].join(',').toLowerCase();
+          if(r.includes('tipo ingreso')&&r.includes('tipo egreso')){hdrIdx=i;break;}
         }
       }
-      if(tipoEg&&tipoEg.length>1){
-        if(!newEgresos[tipoEg])newEgresos[tipoEg]={};
-        newEgresos[tipoEg][mk]=(newEgresos[tipoEg][mk]||0)+amount;
+      if(hdrIdx<0){console.warn('[Mercury] Header not found');return;}
+      var h=rows[hdrIdx].map(function(x){return x.toLowerCase().trim();});
+      var iAmt    = h.findIndex(function(x){return x==='amount';});
+      var iMes    = h.findIndex(function(x){return x==='mes';});
+      var iAnio   = h.findIndex(function(x){return x==='año'||x==='anio'||x==='year';});
+      var iTipoIn = h.findIndex(function(x){return x.includes('tipo ingreso');});
+      var iTipoEg = h.findIndex(function(x){return x.includes('tipo egreso');});
+      console.log('[Mercury] cols → Amt:'+iAmt+' Mes:'+iMes+' Año:'+iAnio+' TipoIn:'+iTipoIn+' TipoEg:'+iTipoEg);
+      if(iMes<0||iAnio<0){console.warn('[Mercury] Missing Mes/Año cols');return;}
+
+      rows.slice(hdrIdx+1).forEach(function(row){
+        if(!row[iMes]||!row[iAnio])return;
+        var mk=mkKey(row[iMes],row[iAnio]);
+        if(!mk)return;
+        var amt=iAmt>=0?cleanNum(row[iAmt]):0;
+        if(amt<=0)return;
+        var tin =(iTipoIn>=0?(row[iTipoIn]||''):'').trim();
+        var teg =(iTipoEg>=0?(row[iTipoEg]||''):'').trim();
+
+        if(tin&&tin.length>1&&tin!=='#N/A'){
+          var tl=tin.toLowerCase();
+          if(tl.includes('stripe'))                       newPas.Stripe[mk]=(newPas.Stripe[mk]||0)+amt;
+          else if(tl.includes('dlocal')||tl.includes('pingpong')) newPas.Dlocal[mk]=(newPas.Dlocal[mk]||0)+amt;
+          else if(tl.includes('cashback'))                newPas['Mercury Cashback'][mk]=(newPas['Mercury Cashback'][mk]||0)+amt;
+          else if(tl.includes('inversion lr'))            newPas['Inversion LR'][mk]=(newPas['Inversion LR'][mk]||0)+amt;
+          else if(tl.includes('inversion jt'))            newPas['Inversion JT'][mk]=(newPas['Inversion JT'][mk]||0)+amt;
+          else if(!tl.includes('interes')&&!tl.includes('global')){
+            if(!newSocios[tin])newSocios[tin]={};
+            newSocios[tin][mk]=(newSocios[tin][mk]||0)+amt;
+          }
+        }
+        if(teg&&teg.length>1&&teg!=='#N/A'){
+          if(!newEgresos[teg])newEgresos[teg]={};
+          newEgresos[teg][mk]=(newEgresos[teg][mk]||0)+amt;
+        }
+      });
+    })();
+
+    // ──────────────────────────────────────────────────
+    // GENERAL_GLOBAL
+    // Columns: Fecha | Egresos | Ingresos | Saldo | Tipo Ingresos | Tipo Egresos | Mes | Año
+    // Ingresos col = monto que entró  → socios que aportaron
+    // Egresos col  = monto que salió  → gastos
+    // ──────────────────────────────────────────────────
+    (function(){
+      var rows=parseCSV(tGlob);
+      if(rows.length<2) return;
+      var hdrIdx=-1;
+      for(var i=0;i<Math.min(rows.length,30);i++){
+        var r=rows[i].join(',').toLowerCase();
+        if(r.includes('fecha')&&r.includes('tipo ingreso')){hdrIdx=i;break;}
       }
-    });
+      if(hdrIdx<0){console.warn('[Global] Header not found');return;}
+      var h=rows[hdrIdx].map(function(x){return x.toLowerCase().trim();});
+      var iIng    = h.findIndex(function(x){return x==='ingresos';});
+      var iEgr    = h.findIndex(function(x){return x==='egresos';});
+      var iMes    = h.findIndex(function(x){return x==='mes';});
+      var iAnio   = h.findIndex(function(x){return x==='año'||x==='anio'||x==='year';});
+      var iTipoIn = h.findIndex(function(x){return x.includes('tipo ingreso');});
+      var iTipoEg = h.findIndex(function(x){return x.includes('tipo egreso');});
+      console.log('[Global] cols → Ing:'+iIng+' Egr:'+iEgr+' Mes:'+iMes+' Año:'+iAnio+' TipoIn:'+iTipoIn+' TipoEg:'+iTipoEg);
+      if(iMes<0||iAnio<0){console.warn('[Global] Missing Mes/Año cols');return;}
 
-    var hasSocios=Object.keys(newSocios).length>0;
+      rows.slice(hdrIdx+1).forEach(function(row){
+        if(!row[iMes]||!row[iAnio])return;
+        var mk=mkKey(row[iMes],row[iAnio]);
+        if(!mk)return;
+        var tin=(iTipoIn>=0?(row[iTipoIn]||''):'').trim();
+        var teg=(iTipoEg>=0?(row[iTipoEg]||''):'').trim();
+
+        // Ingresos: aportes de socios / pasarelas
+        if(tin&&tin.length>1&&tin!=='#N/A'){
+          var amtIn=iIng>=0?cleanNum(row[iIng]):0;
+          if(amtIn>0){
+            var tl=tin.toLowerCase();
+            if(tl.includes('stripe'))                       newPas.Stripe[mk]=(newPas.Stripe[mk]||0)+amtIn;
+            else if(tl.includes('dlocal')||tl.includes('pingpong')) newPas.Dlocal[mk]=(newPas.Dlocal[mk]||0)+amtIn;
+            else if(tl.includes('cashback'))                newPas['Mercury Cashback'][mk]=(newPas['Mercury Cashback'][mk]||0)+amtIn;
+            else if(tl.includes('inversion lr'))            newPas['Inversion LR'][mk]=(newPas['Inversion LR'][mk]||0)+amtIn;
+            else if(tl.includes('inversion jt'))            newPas['Inversion JT'][mk]=(newPas['Inversion JT'][mk]||0)+amtIn;
+            else if(!tl.includes('interes')&&!tl.includes('global')){
+              if(!newSocios[tin])newSocios[tin]={};
+              newSocios[tin][mk]=(newSocios[tin][mk]||0)+amtIn;
+            }
+          }
+        }
+        // Egresos: gastos
+        if(teg&&teg.length>1&&teg!=='#N/A'){
+          var amtEg=iEgr>=0?cleanNum(row[iEgr]):0;
+          if(amtEg>0){
+            if(!newEgresos[teg])newEgresos[teg]={};
+            newEgresos[teg][mk]=(newEgresos[teg][mk]||0)+amtEg;
+          }
+        }
+      });
+    })();
+
+    // ──────────────────────────────────────────────────
+    // OTROS_CUENTAS
+    // Columns: Fecha | Egresos | Ingresos | Tipo Ingresos | Tipo Egresos | Mes | Año
+    // Misma lógica que General_Global
+    // ──────────────────────────────────────────────────
+    (function(){
+      var rows=parseCSV(tOtros);
+      if(rows.length<2) return;
+      var hdrIdx=-1;
+      for(var i=0;i<Math.min(rows.length,30);i++){
+        var r=rows[i].join(',').toLowerCase();
+        if(r.includes('fecha')&&r.includes('tipo ingreso')){hdrIdx=i;break;}
+      }
+      if(hdrIdx<0){console.warn('[Otros] Header not found');return;}
+      var h=rows[hdrIdx].map(function(x){return x.toLowerCase().trim();});
+      var iIng    = h.findIndex(function(x){return x==='ingresos';});
+      var iEgr    = h.findIndex(function(x){return x==='egresos';});
+      var iMes    = h.findIndex(function(x){return x==='mes';});
+      var iAnio   = h.findIndex(function(x){return x==='año'||x==='anio'||x==='year';});
+      var iTipoIn = h.findIndex(function(x){return x.includes('tipo ingreso');});
+      var iTipoEg = h.findIndex(function(x){return x.includes('tipo egreso');});
+      console.log('[Otros] cols → Ing:'+iIng+' Egr:'+iEgr+' Mes:'+iMes+' Año:'+iAnio+' TipoIn:'+iTipoIn+' TipoEg:'+iTipoEg);
+      if(iMes<0||iAnio<0){console.warn('[Otros] Missing Mes/Año cols');return;}
+
+      rows.slice(hdrIdx+1).forEach(function(row){
+        if(!row[iMes]||!row[iAnio])return;
+        var mk=mkKey(row[iMes],row[iAnio]);
+        if(!mk)return;
+        var tin=(iTipoIn>=0?(row[iTipoIn]||''):'').trim();
+        var teg=(iTipoEg>=0?(row[iTipoEg]||''):'').trim();
+
+        if(tin&&tin.length>1&&tin!=='#N/A'){
+          var amtIn=iIng>=0?cleanNum(row[iIng]):0;
+          if(amtIn>0){
+            var tl=tin.toLowerCase();
+            if(tl.includes('stripe'))                       newPas.Stripe[mk]=(newPas.Stripe[mk]||0)+amtIn;
+            else if(tl.includes('dlocal')||tl.includes('pingpong')) newPas.Dlocal[mk]=(newPas.Dlocal[mk]||0)+amtIn;
+            else if(tl.includes('cashback'))                newPas['Mercury Cashback'][mk]=(newPas['Mercury Cashback'][mk]||0)+amtIn;
+            else if(tl.includes('inversion lr'))            newPas['Inversion LR'][mk]=(newPas['Inversion LR'][mk]||0)+amtIn;
+            else if(tl.includes('inversion jt'))            newPas['Inversion JT'][mk]=(newPas['Inversion JT'][mk]||0)+amtIn;
+            else if(!tl.includes('interes')&&!tl.includes('global')){
+              if(!newSocios[tin])newSocios[tin]={};
+              newSocios[tin][mk]=(newSocios[tin][mk]||0)+amtIn;
+            }
+          }
+        }
+        if(teg&&teg.length>1&&teg!=='#N/A'){
+          var amtEg=iEgr>=0?cleanNum(row[iEgr]):0;
+          if(amtEg>0){
+            if(!newEgresos[teg])newEgresos[teg]={};
+            newEgresos[teg][mk]=(newEgresos[teg][mk]||0)+amtEg;
+          }
+        }
+      });
+    })();
+
+    // ── Merge into globals (only replace if we got real data)
+    var hasSocios =Object.keys(newSocios).length>0;
     var hasEgresos=Object.keys(newEgresos).length>0;
-
-    if(hasSocios){
-      Object.keys(SOCIOS).forEach(function(k){delete SOCIOS[k];});
-      Object.keys(newSocios).forEach(function(k){SOCIOS[k]=newSocios[k];});
-      activeSocios=new Set(Object.keys(SOCIOS));
-    }
-    if(hasEgresos){
-      Object.keys(EGRESOS).forEach(function(k){delete EGRESOS[k];});
-      Object.keys(newEgresos).forEach(function(k){EGRESOS[k]=newEgresos[k];});
-      activeEgresos=new Set(Object.keys(EGRESOS));
-    }
+    if(hasSocios) {Object.keys(SOCIOS).forEach(function(k){delete SOCIOS[k];});Object.assign(SOCIOS,newSocios);activeSocios=new Set(Object.keys(SOCIOS));}
+    if(hasEgresos){Object.keys(EGRESOS).forEach(function(k){delete EGRESOS[k];});Object.assign(EGRESOS,newEgresos);activeEgresos=new Set(Object.keys(EGRESOS));}
     Object.keys(newPas).forEach(function(k){PASARELAS[k]=newPas[k];});
 
-    // Rebuild months list
+    // Rebuild months
     var allMK=new Set();
-    [SOCIOS,EGRESOS,PASARELAS].forEach(function(obj){
-      Object.values(obj).forEach(function(d){Object.keys(d).forEach(function(k){allMK.add(k);});});
-    });
+    [SOCIOS,EGRESOS,PASARELAS].forEach(function(obj){Object.values(obj).forEach(function(d){Object.keys(d).forEach(function(k){allMK.add(k);});});});
     ALL_MONTHS.length=0;
-    Array.from(allMK).filter(function(k){return /^\d{4}-\d{1,2}$/.test(k);}).sort(function(a,b){
-      var pa=a.split('-'),pb=b.split('-');
-      var ya=+pa[0],yb=+pb[0],ma=+pa[1],mb=+pb[1];
-      return ya!==yb?ya-yb:ma-mb;
-    }).forEach(function(k){ALL_MONTHS.push(k);});
+    Array.from(allMK).filter(function(k){return /^\d{4}-\d{1,2}$/.test(k);}).sort(function(a,b){var pa=a.split('-'),pb=b.split('-');return +pa[0]!==+pb[0]?+pa[0]-+pb[0]:+pa[1]-+pb[1];}).forEach(function(k){ALL_MONTHS.push(k);});
     rebuildYearSelect();
 
     var now=new Date();
+    var ts2=now.toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'})+' '+now.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
     document.getElementById('lastUpdated').textContent='Act. '+now.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
     document.getElementById('modeBadge').textContent='🟢 EN VIVO';
     document.getElementById('modeBadge').className='live-badge live';
     document.getElementById('liveDot').style.background='var(--green)';
     document.getElementById('dataBanner').className='banner live';
-    document.getElementById('dataBanner').innerHTML='<span>🟢</span><div>Datos actualizados desde <strong>Google Sheets</strong> el '+now.toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'})+' a las '+now.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})+'. Haz clic en <strong>Actualizar</strong> para refrescar.</div>';
-    document.getElementById('dataSubtitle').textContent='Panel financiero en vivo · Google Sheets · USD';
+    document.getElementById('dataBanner').innerHTML='<span>🟢</span><div>Datos actualizados desde <strong>3 hojas</strong> (Mercury USA · General_Global · Otros_Cuentas) el '+ts2+'. Haz clic en <strong>Actualizar</strong> para refrescar.</div>';
+    document.getElementById('dataSubtitle').textContent='Panel financiero en vivo · 3 cuentas · USD';
 
     setLoading(false);
     render();
-    showToast('Datos actualizados correctamente ✓','ok');
+    showToast('Datos actualizados — 3 hojas cargadas ✓','ok');
+
   }catch(err){
     setLoading(false);
     console.error(err);
