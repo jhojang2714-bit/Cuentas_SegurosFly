@@ -666,7 +666,7 @@ async function reloadFromSheet(){
         iGrupo=findCol(['grupo','group']);
     if(iMes<0||iAnio<0)throw new Error('No se encontraron columnas Mes/Anio.');
     var nS={}, nEM={}, nP={Stripe:{},Dlocal:{},'Mercury Cashback':{},'Inversion LR':{},'Inversion JT':{}};
-    var diag={total:0,procesadas:0,sinFecha:0,sinMonto:0,sinTipo:0,muestraSaltadas:[]};
+    var diag={total:0,procesadas:0,sinFecha:0,sinMonto:0,sinTipo:0,muestraSaltadas:[],tipoInVals:{},tipoInRouted:{stripe:0,dlocal:0,cashback:0,invLR:0,invJT:0,socio:0,excluido:0}};
     rows.slice(hdrIdx+1).forEach(function(row){
       if(!row||row.length===0||row.every(function(c){return !c||!String(c).trim();}))return;
       diag.total++;
@@ -692,13 +692,15 @@ async function reloadFromSheet(){
       var grupo=iGrupo>=0?(row[iGrupo]||'').trim():'';
       if(tipoIn){
         var tl=tipoIn.toLowerCase();
-        if(tl.includes('stripe'))nP.Stripe[mk]=(nP.Stripe[mk]||0)+amount;
-        else if(tl.includes('dlocal')||tl.includes('pingpong'))nP.Dlocal[mk]=(nP.Dlocal[mk]||0)+amount;
-        else if(tl.includes('cashback'))nP['Mercury Cashback'][mk]=(nP['Mercury Cashback'][mk]||0)+amount;
-        else if(tl.includes('inversion lr')||(tl.includes('inversion')&&tl.includes('lr')))nP['Inversion LR'][mk]=(nP['Inversion LR'][mk]||0)+amount;
-        else if(tl.includes('inversion jt')||(tl.includes('inversion')&&tl.includes('jt')))nP['Inversion JT'][mk]=(nP['Inversion JT'][mk]||0)+amount;
-        else if(tl.includes('inversion'))nP['Inversion LR'][mk]=(nP['Inversion LR'][mk]||0)+amount;
-        else if(!tl.includes('interes')&&!tl.includes('global')&&tipoIn.length>1){if(!nS[tipoIn])nS[tipoIn]={};nS[tipoIn][mk]=(nS[tipoIn][mk]||0)+amount;}
+        diag.tipoInVals[tipoIn]=(diag.tipoInVals[tipoIn]||0)+amount;
+        if(tl.includes('stripe')){nP.Stripe[mk]=(nP.Stripe[mk]||0)+amount;diag.tipoInRouted.stripe+=amount;}
+        else if(tl.includes('dlocal')||tl.includes('pingpong')){nP.Dlocal[mk]=(nP.Dlocal[mk]||0)+amount;diag.tipoInRouted.dlocal+=amount;}
+        else if(tl.includes('cashback')){nP['Mercury Cashback'][mk]=(nP['Mercury Cashback'][mk]||0)+amount;diag.tipoInRouted.cashback+=amount;}
+        else if(tl.includes('inversion lr')||(tl.includes('inversion')&&tl.includes('lr'))){nP['Inversion LR'][mk]=(nP['Inversion LR'][mk]||0)+amount;diag.tipoInRouted.invLR+=amount;}
+        else if(tl.includes('inversion jt')||(tl.includes('inversion')&&tl.includes('jt'))){nP['Inversion JT'][mk]=(nP['Inversion JT'][mk]||0)+amount;diag.tipoInRouted.invJT+=amount;}
+        else if(tl.includes('inversion')){nP['Inversion LR'][mk]=(nP['Inversion LR'][mk]||0)+amount;diag.tipoInRouted.invLR+=amount;}
+        else if(!tl.includes('interes')&&!tl.includes('global')&&tipoIn.length>1){if(!nS[tipoIn])nS[tipoIn]={};nS[tipoIn][mk]=(nS[tipoIn][mk]||0)+amount;diag.tipoInRouted.socio+=amount;}
+        else{diag.tipoInRouted.excluido+=amount;}
       }
       if(tipoEg&&tipoEg.length>1){
         if(!nEM[tipoEg])nEM[tipoEg]={data:{},cat:cat||'Otros',sub:sub||'Otros',tipo:tipo||'',grupo:grupo||tipoEg};
@@ -734,6 +736,24 @@ async function reloadFromSheet(){
     var colorPanel=hayMayoSheet?'var(--green)':'var(--amber)';
     var bgPanel=hayMayoSheet?'#0a3325':'#1a140a';
     var bdPanel=hayMayoSheet?'#1a5c3a':'#3a2d0a';
+    var rt=diag.tipoInRouted;
+    var fmtUSD=function(n){return '$'+Math.round(n).toLocaleString('es-CO');};
+    var tipoInList=Object.keys(diag.tipoInVals).sort(function(a,b){return diag.tipoInVals[b]-diag.tipoInVals[a];});
+    var tipoInHtml=tipoInList.map(function(name){
+      var tl=name.toLowerCase();
+      var destino='Socio';
+      if(tl.includes('stripe'))destino='Stripe';
+      else if(tl.includes('dlocal')||tl.includes('pingpong'))destino='Dlocal';
+      else if(tl.includes('cashback'))destino='Cashback';
+      else if(tl.includes('inversion lr')||(tl.includes('inversion')&&tl.includes('lr')))destino='Inversion LR';
+      else if(tl.includes('inversion jt')||(tl.includes('inversion')&&tl.includes('jt')))destino='Inversion JT';
+      else if(tl.includes('inversion'))destino='Inversion LR';
+      else if(tl.includes('interes'))destino='EXCLUIDO (interes)';
+      else if(tl.includes('global'))destino='EXCLUIDO (global)';
+      else if(name.length<=1)destino='EXCLUIDO (vacio)';
+      var color=destino.indexOf('EXCLUIDO')===0?'var(--red)':destino==='Socio'?'var(--green)':'var(--blue)';
+      return '<tr><td style="padding:2px 8px 2px 0">'+name+'</td><td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace">'+fmtUSD(diag.tipoInVals[name])+'</td><td style="padding:2px 0;color:'+color+'">'+destino+'</td></tr>';
+    }).join('');
     var diagHtml='<div style="background:'+bgPanel+';border:1px solid '+bdPanel+';border-radius:9px;padding:12px 14px;margin-bottom:14px;font-size:.78rem;color:var(--text)" id="diagPanel">'
       +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'
       +'<div style="flex:1">'
@@ -742,8 +762,14 @@ async function reloadFromSheet(){
       +'<b>Columnas detectadas:</b> Mes = col '+iMes+' ("'+colNombre(iMes)+'") &middot; Año = col '+iAnio+' ("'+colNombre(iAnio)+'") &middot; Monto = col '+iAmount+' ("'+colNombre(iAmount)+'")<br>'
       +'<b>Filas Sheet:</b> '+diag.total+' totales &middot; '+diag.procesadas+' OK &middot; '+diag.sinFecha+' sin fecha &middot; '+diag.sinMonto+' sin monto &middot; '+diag.sinTipo+' sin tipo<br>'
       +'<b>Meses en el Sheet ('+mesesOrdenados.length+'):</b> '+(mesesOrdenados.join(', ')||'ninguno')+'<br>'
+      +'<b>Ruteo desde "tipo ingresos":</b> Socios '+fmtUSD(rt.socio)+' &middot; Stripe '+fmtUSD(rt.stripe)+' &middot; Dlocal '+fmtUSD(rt.dlocal)+' &middot; Cashback '+fmtUSD(rt.cashback)+' &middot; Inv.LR '+fmtUSD(rt.invLR)+' &middot; Inv.JT '+fmtUSD(rt.invJT)+' &middot; Excluido '+fmtUSD(rt.excluido)+'<br>'
       +(hayMayoSheet?'':'<b style="color:var(--amber)">Para meses anteriores a '+primerMesSheet+' se usan los datos locales hardcodeados (Global66, etc.). Esos no se actualizan desde el Sheet.</b><br>')
-      +'<b>Header completo:</b> <span style="font-family:DM Mono,monospace;font-size:.72rem;color:var(--text3)">'+header.map(function(h,i){return i+':'+h;}).join(' | ')+'</span>'
+      +'<details style="margin-top:8px"><summary style="cursor:pointer;color:var(--blue)">Ver desglose por valor de "tipo ingresos" ('+tipoInList.length+' distintos)</summary>'
+      +'<table style="margin-top:6px;font-size:.74rem"><thead><tr style="color:var(--text3)"><th style="text-align:left;padding:2px 8px 4px 0">tipo ingresos</th><th style="text-align:right;padding:2px 8px 4px">Total Sheet</th><th style="text-align:left;padding:2px 0 4px">Clasificado como</th></tr></thead><tbody>'+tipoInHtml+'</tbody></table>'
+      +'</details>'
+      +'<details style="margin-top:6px"><summary style="cursor:pointer;color:var(--blue)">Ver header completo</summary>'
+      +'<div style="font-family:DM Mono,monospace;font-size:.72rem;color:var(--text3);margin-top:4px">'+header.map(function(h,i){return i+':'+h;}).join(' | ')+'</div>'
+      +'</details>'
       +'</div></div>'
       +'<button onclick="document.getElementById(\'diagPanel\').remove()" style="background:transparent;border:1px solid var(--border2);color:var(--text3);border-radius:6px;padding:4px 8px;cursor:pointer;font-family:inherit;font-size:.7rem">cerrar</button>'
       +'</div>';
