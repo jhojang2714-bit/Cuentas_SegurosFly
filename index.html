@@ -108,7 +108,7 @@ tr:hover td{background:var(--bg3)}
   <div class="hd">
     <div><h1>Dashboard Cuentas SegurosFly</h1><p id="subTitle">Resumen financiero &middot; Mar 2025 &ndash; hoy &middot; USD</p></div>
     <div class="ctrls">
-      <select id="yrSel" onchange="render()"><option value="all">Todos los a&ntilde;os</option></select>
+      <select id="yrSel" onchange="render()"><option value="all">Todos los a&ntilde;os</option><option value="2025">2025</option><option value="2026">2026</option></select>
       <select id="mnSel" onchange="render()">
         <option value="all">Todos los meses</option>
         <option value="3">Mar</option><option value="4">Abr</option><option value="5">May</option>
@@ -154,7 +154,7 @@ tr:hover td{background:var(--bg3)}
 var SHEET_ID = '1-9073LxXGKAxXvwoUbcbwqklTKZAMpa4cVkpsqEmX3M';
 var GID_MERCURY = '1150506311';
 var MES = {1:'Ene',2:'Feb',3:'Mar',4:'Abr',5:'May',6:'Jun',7:'Jul',8:'Ago',9:'Sep',10:'Oct',11:'Nov',12:'Dic'};
-var ALL_MONTHS = [];
+var ALL_MONTHS = ['2025-3','2025-4','2025-5','2025-6','2025-7','2025-8','2025-9','2025-10','2025-11','2025-12','2026-1','2026-2','2026-3','2026-4'];
 var SOCIOS = {
   'Felix Ballesteros':{'2025-6':44.7,'2025-7':488,'2025-8':212,'2025-10':820,'2025-11':410,'2025-12':769,'2026-1':314,'2026-2':255.22,'2026-3':430},
   'Otoniel Martell':{'2025-4':302.28,'2025-5':88.47,'2025-6':100.28,'2025-7':150.45,'2025-8':444.97,'2025-9':102.81,'2025-10':200.04,'2025-11':156.55,'2025-12':543,'2026-1':619,'2026-2':123,'2026-3':247.41,'2026-4':295.58},
@@ -221,15 +221,6 @@ var GC = {'Ads Performance':'#F06050','Herramientas':'#4DA8F5','Herramienta':'#4
 var RC = ['#F06050','#4DA8F5','#2DD4A0','#9B8FEE','#F5B840','#F06090','#2DD4A0','#4DA8F5','#9B8FEE','#F5B840','#F06090','#F06050','#4DA8F5','#2DD4A0','#9B8FEE'];
 function gColor(g){ return GC[g] || '#8A95A8'; }
 
-function rebuildAllMonths(){
-  var allMK=new Set();
-  [SOCIOS,PASARELAS].forEach(function(obj){Object.values(obj).forEach(function(d){Object.keys(d).forEach(function(k){allMK.add(k);});});});
-  Object.values(EGRESOS_META).forEach(function(m){Object.keys(m.data).forEach(function(k){allMK.add(k);});});
-  ALL_MONTHS.length=0;
-  Array.from(allMK).filter(function(k){return /^\d{4}-\d{1,2}$/.test(k);}).sort(function(a,b){var pa=a.split('-').map(Number),pb=b.split('-').map(Number);return pa[0]!==pb[0]?pa[0]-pb[0]:pa[1]-pb[1];}).forEach(function(k){ALL_MONTHS.push(k);});
-}
-rebuildAllMonths();
-
 var view = 'resumen';
 var charts = {};
 var activeSocios = new Set(Object.keys(SOCIOS));
@@ -257,29 +248,40 @@ function parseCSV(text){
 }
 function cleanNum(s){
   if(!s)return 0;
-  var str=String(s).replace(/[$\s]/g,'').trim();
-  // Detect format: if dot comes after comma → comma is thousands sep (1.234,56)
-  // If comma comes after dot → dot is thousands sep (1,234.56)
-  // If only comma → treat as decimal separator (1234,56)
-  // If only dot → standard decimal (1234.56)
-  var lastDot=str.lastIndexOf('.'), lastComma=str.lastIndexOf(',');
-  var n;
-  if(lastDot>-1 && lastComma>-1){
-    if(lastComma>lastDot){
-      // format: 1.234,56  → dot=thousands, comma=decimal
-      n=parseFloat(str.replace(/\./g,'').replace(',','.'));
-    } else {
-      // format: 1,234.56  → comma=thousands, dot=decimal
-      n=parseFloat(str.replace(/,/g,''));
-    }
-  } else if(lastComma>-1 && lastDot<0){
-    // only comma: treat as decimal separator
-    n=parseFloat(str.replace(',','.'));
-  } else {
-    // only dot or no separator
-    n=parseFloat(str);
-  }
+  var n=parseFloat(String(s).replace(/[$\s]/g,'').replace(/\./g,'').replace(',','.'));
   return isNaN(n)?0:Math.abs(n);
+}
+function parseMes(s){
+  if(s===null||s===undefined)return NaN;
+  var raw=String(s).trim();
+  if(!raw)return NaN;
+  var n=parseInt(raw,10);
+  if(!isNaN(n)&&n>=1&&n<=12)return n;
+  var t=raw.toLowerCase().replace(/\./g,'').replace(/[áéíóú]/g,function(c){return {'á':'a','é':'e','í':'i','ó':'o','ú':'u'}[c];});
+  var map={'ene':1,'enero':1,'jan':1,'january':1,
+           'feb':2,'febrero':2,'february':2,
+           'mar':3,'marzo':3,'march':3,
+           'abr':4,'abril':4,'apr':4,'april':4,
+           'may':5,'mayo':5,
+           'jun':6,'junio':6,'june':6,
+           'jul':7,'julio':7,'july':7,
+           'ago':8,'agosto':8,'aug':8,'august':8,
+           'sep':9,'sept':9,'septiembre':9,'september':9,
+           'oct':10,'octubre':10,'october':10,
+           'nov':11,'noviembre':11,'november':11,
+           'dic':12,'diciembre':12,'dec':12,'december':12};
+  if(map[t]!==undefined)return map[t];
+  var k=Object.keys(map).find(function(key){return t.indexOf(key)===0;});
+  return k?map[k]:NaN;
+}
+function parseAnio(s){
+  if(s===null||s===undefined)return NaN;
+  var raw=String(s).trim();
+  if(!raw)return NaN;
+  var n=parseInt(raw,10);
+  if(isNaN(n))return NaN;
+  if(n>=20&&n<=99)return 2000+n;
+  return n;
 }
 
 function rebuildYearSelect(){
@@ -648,22 +650,40 @@ async function reloadFromSheet(){
     if(hdrIdx<0)throw new Error('No se encontro el encabezado.');
     var header=rows[hdrIdx].map(function(h){return h.toLowerCase().trim();});
     function fi(name){return header.findIndex(function(h){return h.includes(name);});}
-    var iMes=fi('mes'), iAnio=header.findIndex(function(h){return h==='a\u00f1o'||h==='anio'||h.includes('year');}),
-        iAmount=header.findIndex(function(h){return h==='amount'||h==='monto';}),
+    function findCol(exacts,partials){
+      for(var e=0;e<exacts.length;e++){var i=header.indexOf(exacts[e]);if(i>=0)return i;}
+      if(partials)for(var p=0;p<partials.length;p++){var j=header.findIndex(function(h){return h.includes(partials[p]);});if(j>=0)return j;}
+      return -1;
+    }
+    var iMes=findCol(['mes','month'],['mes']),
+        iAnio=findCol(['a\u00f1o','anio','year'],['a\u00f1o','anio','year']),
+        iAmount=findCol(['amount','monto','valor','importe'],['amount','monto','importe']),
         iTipoIn=header.findIndex(function(h){return h.includes('tipo ingreso')||h.includes('tipo ingresos');}),
         iTipoEg=header.findIndex(function(h){return h.includes('tipo egreso')||h.includes('tipo egresos');}),
-        iCat=header.findIndex(function(h){return h==='categor\u00eda'||h==='categoria';}),
-        iSub=header.findIndex(function(h){return h.includes('sub cat');}),
-        iTipo=header.findIndex(function(h){return h==='tipo';}),
-        iGrupo=header.findIndex(function(h){return h==='grupo';});
+        iCat=findCol(['categor\u00eda','categoria','category'],['categor']),
+        iSub=findCol(['sub categor\u00eda','sub categoria','subcategoria'],['sub cat','subcat']),
+        iTipo=findCol(['tipo']),
+        iGrupo=findCol(['grupo','group']);
     if(iMes<0||iAnio<0)throw new Error('No se encontraron columnas Mes/Anio.');
     var nS={}, nEM={}, nP={Stripe:{},Dlocal:{},'Mercury Cashback':{},'Inversion LR':{},'Inversion JT':{}};
+    var diag={total:0,procesadas:0,sinFecha:0,sinMonto:0,sinTipo:0,muestraSaltadas:[]};
     rows.slice(hdrIdx+1).forEach(function(row){
-      var mes=parseInt(row[iMes],10), anio=parseInt(row[iAnio],10);
-      if(isNaN(mes)||isNaN(anio)||mes<1||mes>12||anio<2020)return;
+      if(!row||row.length===0||row.every(function(c){return !c||!String(c).trim();}))return;
+      diag.total++;
+      var mes=parseMes(row[iMes]), anio=parseAnio(row[iAnio]);
+      if(isNaN(mes)||isNaN(anio)||mes<1||mes>12||anio<2020){
+        diag.sinFecha++;
+        if(diag.muestraSaltadas.length<6)diag.muestraSaltadas.push({razon:'fecha',mes:row[iMes],anio:row[iAnio],fila:row});
+        return;
+      }
       var mk=anio+'-'+mes;
       var amount=iAmount>=0?cleanNum(row[iAmount]):0;
-      if(amount<=0)return;
+      if(amount<=0){
+        diag.sinMonto++;
+        if(diag.muestraSaltadas.length<6)diag.muestraSaltadas.push({razon:'monto',monto:row[iAmount],mk:mk,fila:row});
+        return;
+      }
+      diag.procesadas++;
       var tipoIn=iTipoIn>=0?(row[iTipoIn]||'').trim():'';
       var tipoEg=iTipoEg>=0?(row[iTipoEg]||'').trim():'';
       var cat=iCat>=0?(row[iCat]||'').trim():'';
@@ -685,11 +705,56 @@ async function reloadFromSheet(){
         nEM[tipoEg].data[mk]=(nEM[tipoEg].data[mk]||0)+amount;
         if(cat)nEM[tipoEg].cat=cat; if(sub)nEM[tipoEg].sub=sub; if(tipo)nEM[tipoEg].tipo=tipo; if(grupo)nEM[tipoEg].grupo=grupo;
       }
+      if(!tipoIn&&!tipoEg){
+        diag.sinTipo++;
+        if(diag.muestraSaltadas.length<6)diag.muestraSaltadas.push({razon:'sin tipo',mk:mk,monto:amount,fila:row});
+      }
     });
+    var mesesDetectados={};
+    [nS,nP].forEach(function(o){Object.values(o).forEach(function(d){Object.keys(d).forEach(function(k){mesesDetectados[k]=(mesesDetectados[k]||0)+1;});});});
+    Object.values(nEM).forEach(function(m){Object.keys(m.data).forEach(function(k){mesesDetectados[k]=(mesesDetectados[k]||0)+1;});});
+    var mesesOrdenados=Object.keys(mesesDetectados).sort(function(a,b){var pa=a.split('-').map(Number),pb=b.split('-').map(Number);return pa[0]!==pb[0]?pa[0]-pb[0]:pa[1]-pb[1];});
+    var colCambios={iMes:iMes,iAnio:iAnio,iAmount:iAmount,iTipoIn:iTipoIn,iTipoEg:iTipoEg,iCat:iCat,iSub:iSub,iTipo:iTipo,iGrupo:iGrupo};
+    window._diagLast={diag:diag,header:header,cols:colCambios,meses:mesesOrdenados,muestraSaltadas:diag.muestraSaltadas};
+    console.group('[Dashboard] Diagnostico de carga desde Sheet');
+    console.log('Filas totales:',diag.total,'| procesadas:',diag.procesadas,'| sin fecha:',diag.sinFecha,'| sin monto:',diag.sinMonto,'| sin tipo:',diag.sinTipo);
+    if(diag.muestraSaltadas.length)console.warn('Ejemplos de filas saltadas:',diag.muestraSaltadas);
+    console.log('Indices columnas =>',colCambios);
+    console.log('Header:',header);
+    console.log('Meses detectados en el Sheet:',mesesOrdenados);
+    if(!mesesDetectados['2025-5'])console.warn('AVISO: No se detecto Mayo 2025 ("2025-5") en los datos cargados.');
+    console.groupEnd();
+    var hayMayo=!!mesesDetectados['2025-5'];
+    var colNombre=function(idx){return idx>=0&&header[idx]?header[idx]:'(no encontrada)';};
+    var diagHtml='<div style="background:'+(hayMayo?'#0a3325':'#3a1410')+';border:1px solid '+(hayMayo?'#1a5c3a':'#5c2a1a')+';border-radius:9px;padding:12px 14px;margin-bottom:14px;font-size:.78rem;color:var(--text)" id="diagPanel">'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'
+      +'<div style="flex:1">'
+      +'<div style="font-weight:700;margin-bottom:6px;color:'+(hayMayo?'var(--green)':'var(--red)')+'">'+(hayMayo?'OK Mayo 2025 cargado':'Mayo 2025 NO detectado en el Sheet')+'</div>'
+      +'<div style="color:var(--text2);line-height:1.6">'
+      +'<b>Columnas detectadas:</b> Mes = col '+iMes+' ("'+colNombre(iMes)+'") &middot; Año = col '+iAnio+' ("'+colNombre(iAnio)+'") &middot; Monto = col '+iAmount+' ("'+colNombre(iAmount)+'")<br>'
+      +'<b>Filas:</b> '+diag.total+' totales &middot; '+diag.procesadas+' OK &middot; '+diag.sinFecha+' sin fecha &middot; '+diag.sinMonto+' sin monto &middot; '+diag.sinTipo+' sin tipo<br>'
+      +'<b>Meses encontrados ('+mesesOrdenados.length+'):</b> '+(mesesOrdenados.join(', ')||'ninguno')+'<br>'
+      +'<b>Header completo:</b> <span style="font-family:DM Mono,monospace;font-size:.72rem;color:var(--text3)">'+header.map(function(h,i){return i+':'+h;}).join(' | ')+'</span>'
+      +'</div></div>'
+      +'<button onclick="document.getElementById(\'diagPanel\').remove()" style="background:transparent;border:1px solid var(--border2);color:var(--text3);border-radius:6px;padding:4px 8px;cursor:pointer;font-family:inherit;font-size:.7rem">cerrar</button>'
+      +'</div>';
+    if(diag.sinFecha>0&&diag.muestraSaltadas.length){
+      var ejemplos=diag.muestraSaltadas.filter(function(s){return s.razon==='fecha';}).slice(0,3);
+      if(ejemplos.length){
+        diagHtml=diagHtml.replace('</div></div><button',
+          '<br><b style="color:var(--amber)">Ejemplos de filas con fecha inválida:</b><br>'
+          +ejemplos.map(function(e){return '&nbsp;&nbsp;Mes="'+e.mes+'" Año="'+e.anio+'"';}).join('<br>')
+          +'</div></div><button');
+      }
+    }
     if(Object.keys(nS).length>0){Object.keys(SOCIOS).forEach(function(k){delete SOCIOS[k];}); Object.assign(SOCIOS,nS); activeSocios=new Set(Object.keys(SOCIOS));}
     if(Object.keys(nEM).length>0){Object.keys(EGRESOS_META).forEach(function(k){delete EGRESOS_META[k];}); Object.assign(EGRESOS_META,nEM);}
     Object.keys(nP).forEach(function(k){PASARELAS[k]=nP[k];});
-    rebuildAllMonths();
+    var allMK=new Set();
+    [SOCIOS,PASARELAS].forEach(function(obj){Object.values(obj).forEach(function(d){Object.keys(d).forEach(function(k){allMK.add(k);});});});
+    Object.values(EGRESOS_META).forEach(function(m){Object.keys(m.data).forEach(function(k){allMK.add(k);});});
+    ALL_MONTHS.length=0;
+    Array.from(allMK).filter(function(k){return /^\d{4}-\d{1,2}$/.test(k);}).sort(function(a,b){var pa=a.split('-').map(Number),pb=b.split('-').map(Number);return pa[0]!==pb[0]?pa[0]-pb[0]:pa[1]-pb[1];}).forEach(function(k){ALL_MONTHS.push(k);});
     rebuildYearSelect();
     buildEgFilterOptions();
     var now=new Date();
@@ -703,6 +768,8 @@ async function reloadFromSheet(){
     document.getElementById('dataBanner').innerHTML='<span>&#128994;</span><span>Datos actualizados desde <strong>Google Sheets</strong> el <strong>'+fecha+'</strong> a las <strong>'+hora+'</strong>.</span>';
     setLoading(false);
     render();
+    var banner=document.getElementById('dataBanner');
+    if(banner){var prev=document.getElementById('diagPanel');if(prev)prev.remove();banner.insertAdjacentHTML('afterend',diagHtml);}
     showToast('Datos actualizados correctamente','ok');
   }catch(err){
     setLoading(false);
@@ -711,7 +778,6 @@ async function reloadFromSheet(){
   }
 }
 
-rebuildYearSelect();
 buildEgFilterOptions();
 render();
 </script>
