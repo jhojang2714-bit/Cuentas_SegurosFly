@@ -130,6 +130,7 @@ tr:hover td{background:var(--bg3)}
     <button class="tab"     onclick="setView('pasarelas',this)">Pasarelas</button>
     <button class="tab"     onclick="setView('egresos',this)">Egresos</button>
     <button class="tab"     onclick="setView('recurrentes',this)">Recurrentes</button>
+    <button class="tab"     onclick="setView('forecast',this)">Forecast</button>
   </div>
 
   <!-- chips para socios -->
@@ -156,6 +157,8 @@ var GID_MERCURY = '1150506311';
 var SHEET_TABS = [
   {gid:'1029222934', name:'Query Unificado'}
 ];
+var FORECAST_GID = '1895032202';
+var FORECAST = []; // {anio,mes,mk,gasto,monto,gastoActual,gastoFaltante,cat,sub,tipo,grupo}
 var MES = {1:'Ene',2:'Feb',3:'Mar',4:'Abr',5:'May',6:'Jun',7:'Jul',8:'Ago',9:'Sep',10:'Oct',11:'Nov',12:'Dic'};
 var ALL_MONTHS = ['2025-3','2025-4','2025-5','2025-6','2025-7','2025-8','2025-9','2025-10','2025-11','2025-12','2026-1','2026-2','2026-3','2026-4'];
 var SOCIOS = {
@@ -401,6 +404,7 @@ function render(){
   else if(view==='pasarelas') doPasarelas(months,labels);
   else if(view==='egresos'){ document.getElementById('egFiltersBar').style.display='flex'; buildEgFilterOptions(); doEgresos(months,labels); }
   else if(view==='recurrentes') doRecurrentes(months,labels);
+  else if(view==='forecast') doForecast(months,labels);
 }
 function renderEgresosFiltered(){ if(view!=='egresos')return; killCharts(); var months=getMonths(),labels=months.map(lbl); doEgresos(months,labels); }
 
@@ -635,6 +639,109 @@ function doRecurrentes(months,labels){
   charts.rh=new Chart(document.getElementById('cRH'),{type:'bar',data:{labels:avgs.map(function(r){return r.name;}),datasets:[{label:'Prom./mes',data:avgs.map(function(r){return Math.round(r.avg);}),backgroundColor:avgs.map(function(_,i){return RC[i%RC.length]+'66';}),borderColor:avgs.map(function(_,i){return RC[i%RC.length];}),borderWidth:1,borderRadius:3}]},options:bo3});
 }
 
+function fcLoadInputs(mk){
+  var meta=0,socios=5;
+  try{
+    var raw=localStorage.getItem('fcInputs_'+mk);
+    if(raw){var o=JSON.parse(raw);meta=Number(o.meta)||0;socios=Number(o.socios)||5;}
+  }catch(e){}
+  return {meta:meta,socios:socios};
+}
+function fcSaveInputs(mk){
+  var meta=parseFloat(document.getElementById('fcMeta').value)||0;
+  var socios=parseInt(document.getElementById('fcSocios').value,10)||0;
+  try{localStorage.setItem('fcInputs_'+mk,JSON.stringify({meta:meta,socios:socios}));}catch(e){}
+  fcRecalc();
+}
+function fcRecalc(){
+  var mk=document.getElementById('fcMesSel').value;
+  var inp=fcLoadInputs(mk);
+  var meta=parseFloat(document.getElementById('fcMeta').value)||0;
+  var socios=parseInt(document.getElementById('fcSocios').value,10)||0;
+  var rows=FORECAST.filter(function(r){return r.mk===mk;});
+  var tMonto=rows.reduce(function(s,r){return s+(r.monto||0);},0);
+  var tActual=rows.reduce(function(s,r){return s+(r.gastoActual||0);},0);
+  var tFaltante=rows.reduce(function(s,r){return s+(r.gastoFaltante||0);},0);
+  var saldoProyectado=meta-tMonto;
+  var saldoActual=meta-tActual;
+  var box=document.getElementById('fcResultBox');
+  if(!box)return;
+  var positivo=saldoActual>=0;
+  var perSocio=socios>0?Math.abs(saldoActual)/socios:0;
+  box.innerHTML='<div class="kpi-grid">'
+    +'<div class="kpi" style="--ac:var(--purple)"><div class="kpi-l">Meta de ventas</div><div class="kpi-v">'+fmt(meta)+'</div><div class="kpi-s">Mes '+mk+'</div></div>'
+    +'<div class="kpi" style="--ac:var(--amber)"><div class="kpi-l">Gasto proyectado</div><div class="kpi-v">'+fmt(tMonto)+'</div><div class="kpi-s">'+rows.length+' lineas</div></div>'
+    +'<div class="kpi" style="--ac:var(--red)"><div class="kpi-l">Gasto actual</div><div class="kpi-v">'+fmt(tActual)+'</div><div class="kpi-s">Ejecutado</div></div>'
+    +'<div class="kpi" style="--ac:var(--blue)"><div class="kpi-l">Falta por pagar</div><div class="kpi-v">'+fmt(tFaltante)+'</div><div class="kpi-s">Pendiente del mes</div></div>'
+    +'<div class="kpi" style="--ac:'+(positivo?'var(--green)':'var(--red)')+'"><div class="kpi-l">Saldo (Meta - Gasto actual)</div><div class="kpi-v" style="color:'+(positivo?'var(--green)':'var(--red)')+'">'+(positivo?'+':'-')+fmt(Math.abs(saldoActual))+'</div><div class="kpi-s">'+(positivo?'Superavit':'Deficit')+'</div></div>'
+    +'<div class="kpi" style="--ac:'+(positivo?'var(--green)':'var(--amber)')+'"><div class="kpi-l">'+(positivo?'Reparto por socio':'Aporte por socio')+'</div><div class="kpi-v" style="color:'+(positivo?'var(--green)':'var(--amber)')+'">'+(socios>0?(positivo?'+':'-')+fmt(perSocio):'--')+'</div><div class="kpi-s">'+(socios>0?(positivo?'A repartir':'Cada socio aporta')+' entre '+socios+' socios':'Indica nro de socios')+'</div></div>'
+    +'</div>'
+    +'<div class="cs" style="margin-top:6px"><div class="st">Saldo proyectado vs actual</div>'
+    +'<div style="font-size:.78rem;color:var(--text2);line-height:1.7">'
+    +'Si se ejecuta TODO el gasto proyectado ('+fmt(tMonto)+'), saldo = <b style="color:'+(saldoProyectado>=0?'var(--green)':'var(--red)')+'">'+(saldoProyectado>=0?'+':'-')+fmt(Math.abs(saldoProyectado))+'</b><br>'
+    +'Con el gasto actual ('+fmt(tActual)+'), saldo = <b style="color:'+(saldoActual>=0?'var(--green)':'var(--red)')+'">'+(saldoActual>=0?'+':'-')+fmt(Math.abs(saldoActual))+'</b><br>'
+    +(socios>0?(positivo?'Cada socio recibe <b style="color:var(--green)">+'+fmt(perSocio)+'</b>':'Cada socio aporta <b style="color:var(--amber)">'+fmt(perSocio)+'</b>')+' (dividido entre '+socios+' socios)':'')
+    +'</div></div>';
+}
+function doForecast(months,labels){
+  var fcMonths=Array.from(new Set(FORECAST.map(function(r){return r.mk;}))).sort(function(a,b){var pa=a.split('-').map(Number),pb=b.split('-').map(Number);return pa[0]!==pb[0]?pa[0]-pb[0]:pa[1]-pb[1];});
+  if(fcMonths.length===0){
+    document.getElementById('kpiGrid').innerHTML='';
+    document.getElementById('mainArea').innerHTML='<div class="cs"><div class="st">Forecast</div><div style="color:var(--text2);font-size:.85rem;line-height:1.6">No se encontraron datos en la pesta&ntilde;a Forecast del Sheet. Verifica que las columnas <b>A&ntilde;o</b>, <b>Mes</b>, <b>Monto</b> esten presentes. Haz click en <b>Actualizar</b> para recargar.</div></div>';
+    return;
+  }
+  document.getElementById('kpiGrid').innerHTML='';
+  var mkDefault=fcMonths[fcMonths.length-1];
+  var inp=fcLoadInputs(mkDefault);
+  document.getElementById('mainArea').innerHTML=
+    '<div class="cs" style="margin-bottom:10px">'
+    +'<div class="st">Forecast del mes</div>'
+    +'<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">'
+    +'<div><label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-weight:700;display:block;margin-bottom:4px">Mes</label>'
+    +'<select id="fcMesSel" onchange="fcOnMonthChange()">'+fcMonths.map(function(mk){var p=mk.split("-");return '<option value="'+mk+'"'+(mk===mkDefault?' selected':'')+'>'+MES[+p[1]]+" '"+p[0].slice(2)+'</option>';}).join('')+'</select></div>'
+    +'<div><label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-weight:700;display:block;margin-bottom:4px">Meta de ventas ($)</label>'
+    +'<input type="number" id="fcMeta" value="'+inp.meta+'" oninput="fcSaveInputs(document.getElementById(\'fcMesSel\').value)" style="background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:7px;padding:7px 12px;font-size:13px;font-family:DM Sans,sans-serif;width:160px;outline:none" placeholder="Ej. 10000"></div>'
+    +'<div><label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-weight:700;display:block;margin-bottom:4px">Nro de socios</label>'
+    +'<input type="number" id="fcSocios" value="'+inp.socios+'" min="1" oninput="fcSaveInputs(document.getElementById(\'fcMesSel\').value)" style="background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:7px;padding:7px 12px;font-size:13px;font-family:DM Sans,sans-serif;width:100px;outline:none" placeholder="5"></div>'
+    +'</div></div>'
+    +'<div id="fcResultBox"></div>'
+    +'<div id="fcTableArea"></div>';
+  fcRenderTable(mkDefault);
+  fcRecalc();
+}
+function fcOnMonthChange(){
+  var mk=document.getElementById('fcMesSel').value;
+  var inp=fcLoadInputs(mk);
+  document.getElementById('fcMeta').value=inp.meta||'';
+  document.getElementById('fcSocios').value=inp.socios||'';
+  fcRenderTable(mk);
+  fcRecalc();
+}
+function fcRenderTable(mk){
+  var rows=FORECAST.filter(function(r){return r.mk===mk;});
+  var tMonto=rows.reduce(function(s,r){return s+(r.monto||0);},0);
+  var tActual=rows.reduce(function(s,r){return s+(r.gastoActual||0);},0);
+  var tFaltante=rows.reduce(function(s,r){return s+(r.gastoFaltante||0);},0);
+  var sorted=rows.slice().sort(function(a,b){return (b.monto||0)-(a.monto||0);});
+  var trows=sorted.map(function(r){
+    var ej=r.monto?Math.round((r.gastoActual||0)/r.monto*100):0;
+    var ejc=ej<70?'var(--green)':ej<100?'var(--amber)':'var(--red)';
+    return '<tr>'
+      +'<td class="td-left">'+(r.gasto||'--')+'</td>'
+      +'<td>'+(r.cat||'')+'</td>'
+      +'<td>'+(r.grupo||'')+'</td>'
+      +'<td class="neg">'+fmt(r.monto||0)+'</td>'
+      +'<td class="neg">'+fmt(r.gastoActual||0)+'</td>'
+      +'<td class="neg">'+fmt(r.gastoFaltante||0)+'</td>'
+      +'<td style="color:'+ejc+'">'+ej+'%</td>'
+      +'</tr>';
+  }).join('');
+  document.getElementById('fcTableArea').innerHTML=
+    '<div class="ts"><div class="th2"><span>Detalle Forecast '+mk+'</span><span style="color:var(--text3)">'+rows.length+' lineas &middot; Proy '+fmt(tMonto)+' &middot; Actual '+fmt(tActual)+' &middot; Falta '+fmt(tFaltante)+'</span></div>'
+    +'<div class="scroll-x"><table><thead><tr><th>Gasto</th><th style="text-align:left">Categoria</th><th style="text-align:left">Grupo</th><th>Proyectado</th><th>Actual</th><th>Falta</th><th>Ejec %</th></tr></thead>'
+    +'<tbody>'+(trows||'<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:20px">No hay lineas para '+mk+'</td></tr>')+'</tbody></table></div></div>';
+}
+
 function parseSheetTab(text, tabName, nS, nEM, nP, diag){
   var rows=parseCSV(text);
   if(rows.length<2)throw new Error('Pesta\u00f1a "'+tabName+'" parece vacia.');
@@ -722,8 +829,56 @@ function parseSheetTab(text, tabName, nS, nEM, nP, diag){
   return {header:header,cols:cols};
 }
 
+function parseForecastTab(text){
+  var rows=parseCSV(text);
+  if(rows.length<2)return [];
+  var hdrIdx=-1;
+  for(var i=0;i<Math.min(rows.length,30);i++){
+    var r=rows[i].map(function(h){return String(h||'').toLowerCase().trim();}).join(',');
+    if(r.includes('mes')&&(r.includes('a\u00f1o')||r.includes('anio'))&&(r.includes('monto')||r.includes('gasto'))){hdrIdx=i;break;}
+  }
+  if(hdrIdx<0)return [];
+  var header=rows[hdrIdx].map(function(h){return String(h||'').toLowerCase().trim();});
+  function fc(exacts,partials){
+    for(var e=0;e<exacts.length;e++){var i=header.indexOf(exacts[e]);if(i>=0)return i;}
+    if(partials)for(var p=0;p<partials.length;p++){var j=header.findIndex(function(h){return h.includes(partials[p]);});if(j>=0)return j;}
+    return -1;
+  }
+  var iA=fc(['a\u00f1o','anio','year'],['a\u00f1o','anio','year']),
+      iM=fc(['mes','month'],['mes']),
+      iGasto=fc(['gasto','descripcion','descripci\u00f3n','concepto'],['gasto','descripc','concepto']),
+      iMonto=header.findIndex(function(h){return h==='monto'||h==='proyectado'||h==='monto proyectado';}),
+      iCat=fc(['categor\u00eda','categoria','category'],['categor']),
+      iSub=fc(['sub categor\u00eda','sub categoria','subcategoria'],['sub cat','subcat']),
+      iTipo=fc(['tipo']),
+      iGrupo=fc(['grupo','group']),
+      iActual=header.findIndex(function(h){return h.includes('gasto actual')||h.includes('actual');}),
+      iFaltante=header.findIndex(function(h){return h.includes('faltante')||h.includes('pendiente');});
+  if(iMonto<0)iMonto=fc(['monto','amount'],['monto']);
+  var out=[];
+  rows.slice(hdrIdx+1).forEach(function(row){
+    if(!row||row.every(function(c){return !c||!String(c).trim();}))return;
+    var anio=parseAnio(row[iA]), mes=parseMes(row[iM]);
+    if(isNaN(anio)||isNaN(mes))return;
+    var monto=iMonto>=0?cleanNum(row[iMonto]):0;
+    var actual=iActual>=0?cleanNum(row[iActual]):0;
+    var faltante=iFaltante>=0?cleanNum(row[iFaltante]):0;
+    if(monto<=0&&actual<=0&&faltante<=0)return;
+    out.push({
+      anio:anio, mes:mes, mk:anio+'-'+mes,
+      gasto:iGasto>=0?(row[iGasto]||'').trim():'',
+      monto:monto, gastoActual:actual, gastoFaltante:faltante,
+      cat:iCat>=0?(row[iCat]||'').trim():'',
+      sub:iSub>=0?(row[iSub]||'').trim():'',
+      tipo:iTipo>=0?(row[iTipo]||'').trim():'',
+      grupo:iGrupo>=0?(row[iGrupo]||'').trim():''
+    });
+  });
+  return out;
+}
+
 async function reloadFromSheet(){
-  setLoading(true,'Conectando con Google Sheets ('+SHEET_TABS.length+' pesta\u00f1as)...');
+  setLoading(true,'Conectando con Google Sheets ('+(SHEET_TABS.length+1)+' pesta\u00f1as)...');
   try{
     var fetches=SHEET_TABS.map(function(tab){
       var url='https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/export?format=csv&gid='+tab.gid+'&t='+Date.now();
@@ -732,7 +887,12 @@ async function reloadFromSheet(){
         return res.text().then(function(text){return {tab:tab,text:text};});
       });
     });
+    var forecastFetch=fetch('https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/export?format=csv&gid='+FORECAST_GID+'&t='+Date.now())
+      .then(function(res){if(!res.ok)throw new Error('HTTP '+res.status+' en Forecast.');return res.text();})
+      .then(function(text){try{FORECAST=parseForecastTab(text);}catch(e){console.warn('Forecast parse error:',e);FORECAST=[];}return true;})
+      .catch(function(e){console.warn('Forecast fetch error:',e);return false;});
     var results=await Promise.allSettled(fetches);
+    await forecastFetch;
     setLoading(true,'Procesando datos de '+results.length+' pesta\u00f1as...');
     var nS={}, nEM={}, nP={Stripe:{},Dlocal:{},'Mercury Cashback':{},'Inversion LR':{},'Inversion JT':{}};
     var diag={total:0,procesadas:0,sinFecha:0,sinMonto:0,sinTipo:0,muestraSaltadas:[],tipoInVals:{},tipoInPerTab:{},tipoInRouted:{stripe:0,dlocal:0,cashback:0,invLR:0,invJT:0,socio:0,excluido:0},tabs:[],headers:{},errors:[]};
@@ -898,7 +1058,7 @@ async function reloadFromSheet(){
     document.getElementById('dataBanner').innerHTML='<span>&#128994;</span><span>Datos actualizados desde <strong>Google Sheets</strong> el <strong>'+fecha+'</strong> a las <strong>'+hora+'</strong>.</span>';
     // Guardar snapshot en localStorage para que persista entre refrescos
     try{
-      var snapshot={ts:Date.now(),SOCIOS:SOCIOS,PASARELAS:PASARELAS,EGRESOS_META:EGRESOS_META,ALL_MONTHS:ALL_MONTHS.slice(),diag:{header:header,meses:mesesOrdenados,cols:colCambios,hayMayoSheet:hayMayoSheet,total:diag.total,procesadas:diag.procesadas}};
+      var snapshot={ts:Date.now(),SOCIOS:SOCIOS,PASARELAS:PASARELAS,EGRESOS_META:EGRESOS_META,ALL_MONTHS:ALL_MONTHS.slice(),FORECAST:FORECAST,diag:{header:header,meses:mesesOrdenados,cols:colCambios,hayMayoSheet:hayMayoSheet,total:diag.total,procesadas:diag.procesadas}};
       localStorage.setItem('dashboardSF_v1',JSON.stringify(snapshot));
     }catch(e){console.warn('No se pudo guardar en localStorage:',e);}
     setLoading(false);
@@ -927,6 +1087,8 @@ function loadFromCache(){
     Object.assign(EGRESOS_META,snap.EGRESOS_META);
     ALL_MONTHS.length=0;
     (snap.ALL_MONTHS||[]).forEach(function(k){ALL_MONTHS.push(k);});
+    FORECAST.length=0;
+    (snap.FORECAST||[]).forEach(function(r){FORECAST.push(r);});
     activeSocios=new Set(Object.keys(SOCIOS));
     rebuildYearSelect();
     buildEgFilterOptions();
