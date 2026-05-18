@@ -108,7 +108,7 @@ tr:hover td{background:var(--bg3)}
   <div class="hd">
     <div><h1>Dashboard Cuentas SegurosFly</h1><p id="subTitle">Resumen financiero &middot; Mar 2025 &ndash; hoy &middot; USD</p></div>
     <div class="ctrls">
-      <select id="yrSel" onchange="render()"><option value="all">Todos los a&ntilde;os</option></select>
+      <select id="yrSel" onchange="render()"><option value="all">Todos los a&ntilde;os</option><option value="2025">2025</option><option value="2026">2026</option></select>
       <select id="mnSel" onchange="render()">
         <option value="all">Todos los meses</option>
         <option value="3">Mar</option><option value="4">Abr</option><option value="5">May</option>
@@ -159,14 +159,7 @@ var SHEET_TABS = [
   {gid:'820646854',  name:'Otros_Cuentas'}
 ];
 var MES = {1:'Ene',2:'Feb',3:'Mar',4:'Abr',5:'May',6:'Jun',7:'Jul',8:'Ago',9:'Sep',10:'Oct',11:'Nov',12:'Dic'};
-var ALL_MONTHS = [];
-function rebuildAllMonths(){
-  var s=new Set();
-  [SOCIOS,PASARELAS].forEach(function(o){Object.values(o).forEach(function(d){Object.keys(d).forEach(function(k){s.add(k);});});});
-  Object.values(EGRESOS_META).forEach(function(m){Object.keys(m.data).forEach(function(k){s.add(k);});});
-  ALL_MONTHS.length=0;
-  Array.from(s).filter(function(k){return /^\d{4}-\d{1,2}$/.test(k);}).sort(function(a,b){var pa=a.split('-').map(Number),pb=b.split('-').map(Number);return pa[0]!==pb[0]?pa[0]-pb[0]:pa[1]-pb[1];}).forEach(function(k){ALL_MONTHS.push(k);});
-}
+var ALL_MONTHS = ['2025-3','2025-4','2025-5','2025-6','2025-7','2025-8','2025-9','2025-10','2025-11','2025-12','2026-1','2026-2','2026-3','2026-4'];
 var SOCIOS = {
   'Felix Ballesteros':{'2025-6':44.7,'2025-7':488,'2025-8':212,'2025-10':820,'2025-11':410,'2025-12':769,'2026-1':314,'2026-2':255.22,'2026-3':430},
   'Otoniel Martell':{'2025-4':302.28,'2025-5':88.47,'2025-6':100.28,'2025-7':150.45,'2025-8':444.97,'2025-9':102.81,'2025-10':200.04,'2025-11':156.55,'2025-12':543,'2026-1':619,'2026-2':123,'2026-3':247.41,'2026-4':295.58},
@@ -724,41 +717,37 @@ function parseSheetTab(text, tabName, nS, nEM, nP, diag){
   return {header:header,cols:cols};
 }
 
-// Fetch con reintentos anti-CORS: directo → allorigins → corsproxy.io
-async function fetchTabCSV(tab){
-  var base='https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/export?format=csv&gid='+tab.gid;
-  var bust='&t='+Date.now();
-  // Intento 1: directo
-  try{
-    var r=await fetch(base+bust,{cache:'no-store'});
-    if(r.ok){var t=await r.text();if(t.length>50&&!t.trim().startsWith('<!'))return{tab:tab,text:t};}
-  }catch(e){}
-  // Intento 2: allorigins
-  try{
-    var r2=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(base),{cache:'no-store'});
-    if(r2.ok){var t2=await r2.text();if(t2.length>50&&!t2.trim().startsWith('<!'))return{tab:tab,text:t2};}
-  }catch(e){}
-  // Intento 3: corsproxy.io
-  try{
-    var r3=await fetch('https://corsproxy.io/?'+encodeURIComponent(base),{cache:'no-store'});
-    if(r3.ok){var t3=await r3.text();if(t3.length>50&&!t3.trim().startsWith('<!'))return{tab:tab,text:t3};}
-  }catch(e){}
-  throw new Error('No se pudo obtener la pestaña "'+tab.name+'". Verifica que el Sheet sea público (Compartir → Cualquier persona con el enlace).');
-}
-
 async function reloadFromSheet(){
   setLoading(true,'Conectando con Google Sheets ('+SHEET_TABS.length+' pesta\u00f1as)...');
   try{
-    var fetches=SHEET_TABS.map(function(tab){return fetchTabCSV(tab);});
-    var results=await Promise.all(fetches);
+    var fetches=SHEET_TABS.map(function(tab){
+      var url='https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/export?format=csv&gid='+tab.gid+'&t='+Date.now();
+      return fetch(url).then(function(res){
+        if(!res.ok)throw new Error('HTTP '+res.status+' en pesta\u00f1a "'+tab.name+'". Verifica que el Sheet sea publico.');
+        return res.text().then(function(text){return {tab:tab,text:text};});
+      });
+    });
+    var results=await Promise.allSettled(fetches);
     setLoading(true,'Procesando datos de '+results.length+' pesta\u00f1as...');
     var nS={}, nEM={}, nP={Stripe:{},Dlocal:{},'Mercury Cashback':{},'Inversion LR':{},'Inversion JT':{}};
-    var diag={total:0,procesadas:0,sinFecha:0,sinMonto:0,sinTipo:0,muestraSaltadas:[],tipoInVals:{},tipoInPerTab:{},tipoInRouted:{stripe:0,dlocal:0,cashback:0,invLR:0,invJT:0,socio:0,excluido:0},tabs:[],headers:{}};
+    var diag={total:0,procesadas:0,sinFecha:0,sinMonto:0,sinTipo:0,muestraSaltadas:[],tipoInVals:{},tipoInPerTab:{},tipoInRouted:{stripe:0,dlocal:0,cashback:0,invLR:0,invJT:0,socio:0,excluido:0},tabs:[],headers:{},errors:[]};
     var primaryHeader=null, primaryCols=null;
-    results.forEach(function(r){
-      var parsed=parseSheetTab(r.text,r.tab.name,nS,nEM,nP,diag);
-      if(!primaryHeader){primaryHeader=parsed.header;primaryCols=parsed.cols;}
+    results.forEach(function(r,idx){
+      var tabName=SHEET_TABS[idx].name;
+      if(r.status==='rejected'){
+        diag.errors.push({tab:tabName,error:String(r.reason&&r.reason.message||r.reason)});
+        console.error('Pesta\u00f1a "'+tabName+'" fallo al cargar:',r.reason);
+        return;
+      }
+      try{
+        var parsed=parseSheetTab(r.value.text,r.value.tab.name,nS,nEM,nP,diag);
+        if(!primaryHeader){primaryHeader=parsed.header;primaryCols=parsed.cols;}
+      }catch(e){
+        diag.errors.push({tab:tabName,error:String(e.message||e)});
+        console.error('Pesta\u00f1a "'+tabName+'" fallo al parsear:',e);
+      }
     });
+    if(!primaryHeader)throw new Error('Ninguna pesta\u00f1a se pudo procesar. '+diag.errors.map(function(e){return e.tab+': '+e.error;}).join(' | '));
     var header=primaryHeader, cols=primaryCols||{};
     var iMes=cols.iMes,iAnio=cols.iAnio,iAmount=cols.iAmount,iTipoIn=cols.iTipoIn,iTipoEg=cols.iTipoEg,iCat=cols.iCat,iSub=cols.iSub,iTipo=cols.iTipo,iGrupo=cols.iGrupo;
     var mesesDetectados={};
@@ -788,7 +777,17 @@ async function reloadFromSheet(){
     var rt=diag.tipoInRouted;
     var fmtUSD=function(n){return '$'+Math.round(n).toLocaleString('es-CO');};
     var tipoInList=Object.keys(diag.tipoInVals).sort(function(a,b){return diag.tipoInVals[b]-diag.tipoInVals[a];});
-    var tipoInHtml=tipoInList.map(function(name){
+    var tabsHtml=diag.tabs.map(function(t){
+      return '<tr><td style="padding:2px 8px 2px 0;font-weight:600">'+t.tab+'</td>'
+        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace">'+t.procesadas+'/'+t.total+'</td>'
+        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace;color:var(--green)">'+fmtUSD(t.socio)+'</td>'
+        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace;color:var(--blue)">'+fmtUSD(t.stripe+t.dlocal+t.cashback+t.invLR+t.invJT)+'</td>'
+        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace;color:var(--red)">'+fmtUSD(t.egresos)+'</td>'
+        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace;color:var(--text3)">'+fmtUSD(t.excluido)+'</td>'
+        +'</tr>';
+    }).join('');
+    var errHtml=diag.errors.length?'<br><b style="color:var(--red)">Pestañas con error:</b> '+diag.errors.map(function(e){return e.tab+' ('+e.error+')';}).join(', '):'';
+    var tipoInRowsHtml=tipoInList.map(function(name){
       var tl=name.toLowerCase();
       var destino='Socio';
       if(tl.includes('stripe'))destino='Stripe';
@@ -801,20 +800,28 @@ async function reloadFromSheet(){
       else if(tl.includes('global'))destino='EXCLUIDO (global)';
       else if(name.length<=1)destino='EXCLUIDO (vacio)';
       var color=destino.indexOf('EXCLUIDO')===0?'var(--red)':destino==='Socio'?'var(--green)':'var(--blue)';
-      return '<tr><td style="padding:2px 8px 2px 0">'+name+'</td><td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace">'+fmtUSD(diag.tipoInVals[name])+'</td><td style="padding:2px 0;color:'+color+'">'+destino+'</td></tr>';
+      var porTab=diag.tipoInPerTab[name]||{};
+      var porTabStr=Object.keys(porTab).map(function(t){return t+': '+fmtUSD(porTab[t]);}).join(' &middot; ');
+      return '<tr><td style="padding:2px 8px 2px 0">'+name+'</td>'
+        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace">'+fmtUSD(diag.tipoInVals[name])+'</td>'
+        +'<td style="padding:2px 8px;color:var(--text3);font-size:.7rem">'+porTabStr+'</td>'
+        +'<td style="padding:2px 0;color:'+color+'">'+destino+'</td></tr>';
     }).join('');
     var diagHtml='<div style="background:'+bgPanel+';border:1px solid '+bdPanel+';border-radius:9px;padding:12px 14px;margin-bottom:14px;font-size:.78rem;color:var(--text)" id="diagPanel">'
       +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'
       +'<div style="flex:1">'
-      +'<div style="font-weight:700;margin-bottom:6px;color:'+colorPanel+'">'+tituloPanel+'</div>'
+      +'<div style="font-weight:700;margin-bottom:6px;color:'+colorPanel+'">'+tituloPanel+' &middot; '+diag.tabs.length+' pestañas cargadas</div>'
       +'<div style="color:var(--text2);line-height:1.6">'
-      +'<b>Columnas detectadas:</b> Mes = col '+iMes+' ("'+colNombre(iMes)+'") &middot; Año = col '+iAnio+' ("'+colNombre(iAnio)+'") &middot; Monto = col '+iAmount+' ("'+colNombre(iAmount)+'")<br>'
+      +'<b>Columnas detectadas (pestaña principal):</b> Mes = col '+iMes+' ("'+colNombre(iMes)+'") &middot; Año = col '+iAnio+' ("'+colNombre(iAnio)+'") &middot; Monto = col '+iAmount+' ("'+colNombre(iAmount)+'")<br>'
       +'<b>Filas Sheet:</b> '+diag.total+' totales &middot; '+diag.procesadas+' OK &middot; '+diag.sinFecha+' sin fecha &middot; '+diag.sinMonto+' sin monto &middot; '+diag.sinTipo+' sin tipo<br>'
       +'<b>Meses en el Sheet ('+mesesOrdenados.length+'):</b> '+(mesesOrdenados.join(', ')||'ninguno')+'<br>'
-      +'<b>Ruteo desde "tipo ingresos":</b> Socios '+fmtUSD(rt.socio)+' &middot; Stripe '+fmtUSD(rt.stripe)+' &middot; Dlocal '+fmtUSD(rt.dlocal)+' &middot; Cashback '+fmtUSD(rt.cashback)+' &middot; Inv.LR '+fmtUSD(rt.invLR)+' &middot; Inv.JT '+fmtUSD(rt.invJT)+' &middot; Excluido '+fmtUSD(rt.excluido)+'<br>'
+      +'<b>Ruteo desde "tipo ingresos":</b> Socios '+fmtUSD(rt.socio)+' &middot; Stripe '+fmtUSD(rt.stripe)+' &middot; Dlocal '+fmtUSD(rt.dlocal)+' &middot; Cashback '+fmtUSD(rt.cashback)+' &middot; Inv.LR '+fmtUSD(rt.invLR)+' &middot; Inv.JT '+fmtUSD(rt.invJT)+' &middot; Excluido '+fmtUSD(rt.excluido)+errHtml+'<br>'
       +(hayMayoSheet?'':'<b style="color:var(--amber)">Para meses anteriores a '+primerMesSheet+' se usan los datos locales hardcodeados (Global66, etc.). Esos no se actualizan desde el Sheet.</b><br>')
-      +'<details style="margin-top:8px"><summary style="cursor:pointer;color:var(--blue)">Ver desglose por valor de "tipo ingresos" ('+tipoInList.length+' distintos)</summary>'
-      +'<table style="margin-top:6px;font-size:.74rem"><thead><tr style="color:var(--text3)"><th style="text-align:left;padding:2px 8px 4px 0">tipo ingresos</th><th style="text-align:right;padding:2px 8px 4px">Total Sheet</th><th style="text-align:left;padding:2px 0 4px">Clasificado como</th></tr></thead><tbody>'+tipoInHtml+'</tbody></table>'
+      +'<details style="margin-top:8px" open><summary style="cursor:pointer;color:var(--blue)">Aporte por pestaña</summary>'
+      +'<table style="margin-top:6px;font-size:.74rem;width:100%"><thead><tr style="color:var(--text3)"><th style="text-align:left;padding:2px 8px 4px 0">Pestaña</th><th style="text-align:right;padding:2px 8px 4px">Filas OK/Tot</th><th style="text-align:right;padding:2px 8px 4px">Socios</th><th style="text-align:right;padding:2px 8px 4px">Pasarelas+Inv</th><th style="text-align:right;padding:2px 8px 4px">Egresos</th><th style="text-align:right;padding:2px 8px 4px">Excluido</th></tr></thead><tbody>'+tabsHtml+'</tbody></table>'
+      +'</details>'
+      +'<details style="margin-top:6px"><summary style="cursor:pointer;color:var(--blue)">Ver desglose por valor de "tipo ingresos" ('+tipoInList.length+' distintos)</summary>'
+      +'<table style="margin-top:6px;font-size:.74rem"><thead><tr style="color:var(--text3)"><th style="text-align:left;padding:2px 8px 4px 0">tipo ingresos</th><th style="text-align:right;padding:2px 8px 4px">Total</th><th style="text-align:left;padding:2px 8px 4px">Por pestaña</th><th style="text-align:left;padding:2px 0 4px">Clasificado como</th></tr></thead><tbody>'+tipoInRowsHtml+'</tbody></table>'
       +'</details>'
       +'<details style="margin-top:6px"><summary style="cursor:pointer;color:var(--blue)">Ver header completo</summary>'
       +'<div style="font-family:DM Mono,monospace;font-size:.72rem;color:var(--text3);margin-top:4px">'+header.map(function(h,i){return i+':'+h;}).join(' | ')+'</div>'
@@ -865,7 +872,11 @@ async function reloadFromSheet(){
       Object.keys(PASARELAS[k]).forEach(function(mk){if(mesesSheet.has(mk))delete PASARELAS[k][mk];});
       Object.keys(nP[k]).forEach(function(mk){PASARELAS[k][mk]=nP[k][mk];});
     });
-    rebuildAllMonths();
+    var allMK=new Set();
+    [SOCIOS,PASARELAS].forEach(function(obj){Object.values(obj).forEach(function(d){Object.keys(d).forEach(function(k){allMK.add(k);});});});
+    Object.values(EGRESOS_META).forEach(function(m){Object.keys(m.data).forEach(function(k){allMK.add(k);});});
+    ALL_MONTHS.length=0;
+    Array.from(allMK).filter(function(k){return /^\d{4}-\d{1,2}$/.test(k);}).sort(function(a,b){var pa=a.split('-').map(Number),pb=b.split('-').map(Number);return pa[0]!==pb[0]?pa[0]-pb[0]:pa[1]-pb[1];}).forEach(function(k){ALL_MONTHS.push(k);});
     rebuildYearSelect();
     buildEgFilterOptions();
     var now=new Date();
@@ -924,9 +935,6 @@ function loadFromCache(){
   }catch(e){console.warn('Error al leer cache:',e);return false;}
 }
 
-// Inicialización: construir meses dinámicamente desde datos hardcodeados
-rebuildAllMonths();
-rebuildYearSelect();
 buildEgFilterOptions();
 // Si hay datos guardados de una sesión anterior, los carga; si no, usa el respaldo hardcodeado
 var hadCache=loadFromCache();
