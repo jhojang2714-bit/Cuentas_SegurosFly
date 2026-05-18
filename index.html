@@ -154,9 +154,7 @@ tr:hover td{background:var(--bg3)}
 var SHEET_ID = '1-9073LxXGKAxXvwoUbcbwqklTKZAMpa4cVkpsqEmX3M';
 var GID_MERCURY = '1150506311';
 var SHEET_TABS = [
-  {gid:'1150506311', name:'Mercury USA'},
-  {gid:'266580265',  name:'General_Global'},
-  {gid:'820646854',  name:'Otros_Cuentas'}
+  {gid:'1029222934', name:'Query Unificado'}
 ];
 var MES = {1:'Ene',2:'Feb',3:'Mar',4:'Abr',5:'May',6:'Jun',7:'Jul',8:'Ago',9:'Sep',10:'Oct',11:'Nov',12:'Dic'};
 var ALL_MONTHS = ['2025-3','2025-4','2025-5','2025-6','2025-7','2025-8','2025-9','2025-10','2025-11','2025-12','2026-1','2026-2','2026-3','2026-4'];
@@ -660,10 +658,12 @@ function parseSheetTab(text, tabName, nS, nEM, nP, diag){
       iCat=findCol(['categor\u00eda','categoria','category'],['categor']),
       iSub=findCol(['sub categor\u00eda','sub categoria','subcategoria'],['sub cat','subcat']),
       iTipo=findCol(['tipo']),
-      iGrupo=findCol(['grupo','group']);
+      iGrupo=findCol(['grupo','group']),
+      iOrigen=findCol(['origen','source','cuenta','banco'],['origen','source']);
   if(iMes<0||iAnio<0)throw new Error('Pesta\u00f1a "'+tabName+'": no se encontraron columnas Mes/Anio.');
-  var cols={iMes:iMes,iAnio:iAnio,iAmount:iAmount,iTipoIn:iTipoIn,iTipoEg:iTipoEg,iCat:iCat,iSub:iSub,iTipo:iTipo,iGrupo:iGrupo};
+  var cols={iMes:iMes,iAnio:iAnio,iAmount:iAmount,iTipoIn:iTipoIn,iTipoEg:iTipoEg,iCat:iCat,iSub:iSub,iTipo:iTipo,iGrupo:iGrupo,iOrigen:iOrigen};
   var tabDiag={tab:tabName,total:0,procesadas:0,sinFecha:0,sinMonto:0,sinTipo:0,socio:0,stripe:0,dlocal:0,cashback:0,invLR:0,invJT:0,excluido:0,egresos:0};
+  if(!diag.porOrigen)diag.porOrigen={};
   rows.slice(hdrIdx+1).forEach(function(row){
     if(!row||row.length===0||row.every(function(c){return !c||!String(c).trim();}))return;
     diag.total++; tabDiag.total++;
@@ -687,25 +687,30 @@ function parseSheetTab(text, tabName, nS, nEM, nP, diag){
     var sub=iSub>=0?(row[iSub]||'').trim():'';
     var tipo=iTipo>=0?(row[iTipo]||'').trim():'';
     var grupo=iGrupo>=0?(row[iGrupo]||'').trim():'';
+    var origen=iOrigen>=0?(row[iOrigen]||'').trim():'';
+    var bucket=origen||tabName;
+    if(!diag.porOrigen[bucket])diag.porOrigen[bucket]={socio:0,pasarela:0,egresos:0,excluido:0,filas:0};
+    diag.porOrigen[bucket].filas++;
     if(tipoIn){
       var tl=tipoIn.toLowerCase();
       diag.tipoInVals[tipoIn]=(diag.tipoInVals[tipoIn]||0)+amount;
       if(!diag.tipoInPerTab[tipoIn])diag.tipoInPerTab[tipoIn]={};
-      diag.tipoInPerTab[tipoIn][tabName]=(diag.tipoInPerTab[tipoIn][tabName]||0)+amount;
-      if(tl.includes('stripe')){nP.Stripe[mk]=(nP.Stripe[mk]||0)+amount;diag.tipoInRouted.stripe+=amount;tabDiag.stripe+=amount;}
-      else if(tl.includes('dlocal')||tl.includes('pingpong')){nP.Dlocal[mk]=(nP.Dlocal[mk]||0)+amount;diag.tipoInRouted.dlocal+=amount;tabDiag.dlocal+=amount;}
-      else if(tl.includes('cashback')){nP['Mercury Cashback'][mk]=(nP['Mercury Cashback'][mk]||0)+amount;diag.tipoInRouted.cashback+=amount;tabDiag.cashback+=amount;}
-      else if(tl.includes('inversion lr')||(tl.includes('inversion')&&tl.includes('lr'))){nP['Inversion LR'][mk]=(nP['Inversion LR'][mk]||0)+amount;diag.tipoInRouted.invLR+=amount;tabDiag.invLR+=amount;}
-      else if(tl.includes('inversion jt')||(tl.includes('inversion')&&tl.includes('jt'))){nP['Inversion JT'][mk]=(nP['Inversion JT'][mk]||0)+amount;diag.tipoInRouted.invJT+=amount;tabDiag.invJT+=amount;}
-      else if(tl.includes('inversion')){nP['Inversion LR'][mk]=(nP['Inversion LR'][mk]||0)+amount;diag.tipoInRouted.invLR+=amount;tabDiag.invLR+=amount;}
-      else if(!tl.includes('interes')&&!tl.includes('global')&&tipoIn.length>1){if(!nS[tipoIn])nS[tipoIn]={};nS[tipoIn][mk]=(nS[tipoIn][mk]||0)+amount;diag.tipoInRouted.socio+=amount;tabDiag.socio+=amount;}
-      else{diag.tipoInRouted.excluido+=amount;tabDiag.excluido+=amount;}
+      diag.tipoInPerTab[tipoIn][bucket]=(diag.tipoInPerTab[tipoIn][bucket]||0)+amount;
+      if(tl.includes('stripe')){nP.Stripe[mk]=(nP.Stripe[mk]||0)+amount;diag.tipoInRouted.stripe+=amount;tabDiag.stripe+=amount;diag.porOrigen[bucket].pasarela+=amount;}
+      else if(tl.includes('dlocal')||tl.includes('pingpong')){nP.Dlocal[mk]=(nP.Dlocal[mk]||0)+amount;diag.tipoInRouted.dlocal+=amount;tabDiag.dlocal+=amount;diag.porOrigen[bucket].pasarela+=amount;}
+      else if(tl.includes('cashback')){nP['Mercury Cashback'][mk]=(nP['Mercury Cashback'][mk]||0)+amount;diag.tipoInRouted.cashback+=amount;tabDiag.cashback+=amount;diag.porOrigen[bucket].pasarela+=amount;}
+      else if(tl.includes('inversion lr')||(tl.includes('inversion')&&tl.includes('lr'))){nP['Inversion LR'][mk]=(nP['Inversion LR'][mk]||0)+amount;diag.tipoInRouted.invLR+=amount;tabDiag.invLR+=amount;diag.porOrigen[bucket].pasarela+=amount;}
+      else if(tl.includes('inversion jt')||(tl.includes('inversion')&&tl.includes('jt'))){nP['Inversion JT'][mk]=(nP['Inversion JT'][mk]||0)+amount;diag.tipoInRouted.invJT+=amount;tabDiag.invJT+=amount;diag.porOrigen[bucket].pasarela+=amount;}
+      else if(tl.includes('inversion')){nP['Inversion LR'][mk]=(nP['Inversion LR'][mk]||0)+amount;diag.tipoInRouted.invLR+=amount;tabDiag.invLR+=amount;diag.porOrigen[bucket].pasarela+=amount;}
+      else if(!tl.includes('interes')&&!tl.includes('global')&&tipoIn.length>1){if(!nS[tipoIn])nS[tipoIn]={};nS[tipoIn][mk]=(nS[tipoIn][mk]||0)+amount;diag.tipoInRouted.socio+=amount;tabDiag.socio+=amount;diag.porOrigen[bucket].socio+=amount;}
+      else{diag.tipoInRouted.excluido+=amount;tabDiag.excluido+=amount;diag.porOrigen[bucket].excluido+=amount;}
     }
     if(tipoEg&&tipoEg.length>1){
       if(!nEM[tipoEg])nEM[tipoEg]={data:{},cat:cat||'Otros',sub:sub||'Otros',tipo:tipo||'',grupo:grupo||tipoEg};
       nEM[tipoEg].data[mk]=(nEM[tipoEg].data[mk]||0)+amount;
       if(cat)nEM[tipoEg].cat=cat; if(sub)nEM[tipoEg].sub=sub; if(tipo)nEM[tipoEg].tipo=tipo; if(grupo)nEM[tipoEg].grupo=grupo;
       tabDiag.egresos+=amount;
+      diag.porOrigen[bucket].egresos+=amount;
     }
     if(!tipoIn&&!tipoEg){
       diag.sinTipo++; tabDiag.sinTipo++;
@@ -777,13 +782,16 @@ async function reloadFromSheet(){
     var rt=diag.tipoInRouted;
     var fmtUSD=function(n){return '$'+Math.round(n).toLocaleString('es-CO');};
     var tipoInList=Object.keys(diag.tipoInVals).sort(function(a,b){return diag.tipoInVals[b]-diag.tipoInVals[a];});
-    var tabsHtml=diag.tabs.map(function(t){
-      return '<tr><td style="padding:2px 8px 2px 0;font-weight:600">'+t.tab+'</td>'
-        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace">'+t.procesadas+'/'+t.total+'</td>'
-        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace;color:var(--green)">'+fmtUSD(t.socio)+'</td>'
-        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace;color:var(--blue)">'+fmtUSD(t.stripe+t.dlocal+t.cashback+t.invLR+t.invJT)+'</td>'
-        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace;color:var(--red)">'+fmtUSD(t.egresos)+'</td>'
-        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace;color:var(--text3)">'+fmtUSD(t.excluido)+'</td>'
+    var porOrigen=diag.porOrigen||{};
+    var origenes=Object.keys(porOrigen).sort(function(a,b){return (porOrigen[b].socio+porOrigen[b].pasarela)-(porOrigen[a].socio+porOrigen[a].pasarela);});
+    var tabsHtml=origenes.map(function(o){
+      var d=porOrigen[o];
+      return '<tr><td style="padding:2px 8px 2px 0;font-weight:600">'+(o||'(sin origen)')+'</td>'
+        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace">'+d.filas+'</td>'
+        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace;color:var(--green)">'+fmtUSD(d.socio)+'</td>'
+        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace;color:var(--blue)">'+fmtUSD(d.pasarela)+'</td>'
+        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace;color:var(--red)">'+fmtUSD(d.egresos)+'</td>'
+        +'<td style="padding:2px 8px;text-align:right;font-family:DM Mono,monospace;color:var(--text3)">'+fmtUSD(d.excluido)+'</td>'
         +'</tr>';
     }).join('');
     var errHtml=diag.errors.length?'<br><b style="color:var(--red)">Pestañas con error:</b> '+diag.errors.map(function(e){return e.tab+' ('+e.error+')';}).join(', '):'';
@@ -817,8 +825,8 @@ async function reloadFromSheet(){
       +'<b>Meses en el Sheet ('+mesesOrdenados.length+'):</b> '+(mesesOrdenados.join(', ')||'ninguno')+'<br>'
       +'<b>Ruteo desde "tipo ingresos":</b> Socios '+fmtUSD(rt.socio)+' &middot; Stripe '+fmtUSD(rt.stripe)+' &middot; Dlocal '+fmtUSD(rt.dlocal)+' &middot; Cashback '+fmtUSD(rt.cashback)+' &middot; Inv.LR '+fmtUSD(rt.invLR)+' &middot; Inv.JT '+fmtUSD(rt.invJT)+' &middot; Excluido '+fmtUSD(rt.excluido)+errHtml+'<br>'
       +(hayMayoSheet?'':'<b style="color:var(--amber)">Para meses anteriores a '+primerMesSheet+' se usan los datos locales hardcodeados (Global66, etc.). Esos no se actualizan desde el Sheet.</b><br>')
-      +'<details style="margin-top:8px" open><summary style="cursor:pointer;color:var(--blue)">Aporte por pestaña</summary>'
-      +'<table style="margin-top:6px;font-size:.74rem;width:100%"><thead><tr style="color:var(--text3)"><th style="text-align:left;padding:2px 8px 4px 0">Pestaña</th><th style="text-align:right;padding:2px 8px 4px">Filas OK/Tot</th><th style="text-align:right;padding:2px 8px 4px">Socios</th><th style="text-align:right;padding:2px 8px 4px">Pasarelas+Inv</th><th style="text-align:right;padding:2px 8px 4px">Egresos</th><th style="text-align:right;padding:2px 8px 4px">Excluido</th></tr></thead><tbody>'+tabsHtml+'</tbody></table>'
+      +'<details style="margin-top:8px" open><summary style="cursor:pointer;color:var(--blue)">Aporte por origen (banco)</summary>'
+      +'<table style="margin-top:6px;font-size:.74rem;width:100%"><thead><tr style="color:var(--text3)"><th style="text-align:left;padding:2px 8px 4px 0">Origen</th><th style="text-align:right;padding:2px 8px 4px">Filas</th><th style="text-align:right;padding:2px 8px 4px">Socios</th><th style="text-align:right;padding:2px 8px 4px">Pasarelas+Inv</th><th style="text-align:right;padding:2px 8px 4px">Egresos</th><th style="text-align:right;padding:2px 8px 4px">Excluido</th></tr></thead><tbody>'+tabsHtml+'</tbody></table>'
       +'</details>'
       +'<details style="margin-top:6px"><summary style="cursor:pointer;color:var(--blue)">Ver desglose por valor de "tipo ingresos" ('+tipoInList.length+' distintos)</summary>'
       +'<table style="margin-top:6px;font-size:.74rem"><thead><tr style="color:var(--text3)"><th style="text-align:left;padding:2px 8px 4px 0">tipo ingresos</th><th style="text-align:right;padding:2px 8px 4px">Total</th><th style="text-align:left;padding:2px 8px 4px">Por pestaña</th><th style="text-align:left;padding:2px 0 4px">Clasificado como</th></tr></thead><tbody>'+tipoInRowsHtml+'</tbody></table>'
