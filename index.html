@@ -724,16 +724,25 @@ async function reloadFromSheet(){
     console.log('Meses detectados en el Sheet:',mesesOrdenados);
     if(!mesesDetectados['2025-5'])console.warn('AVISO: No se detecto Mayo 2025 ("2025-5") en los datos cargados.');
     console.groupEnd();
-    var hayMayo=!!mesesDetectados['2025-5'];
+    var hayMayoSheet=!!mesesDetectados['2025-5'];
+    var estado=hayMayoSheet?'sheet':'local';
     var colNombre=function(idx){return idx>=0&&header[idx]?header[idx]:'(no encontrada)';};
-    var diagHtml='<div style="background:'+(hayMayo?'#0a3325':'#3a1410')+';border:1px solid '+(hayMayo?'#1a5c3a':'#5c2a1a')+';border-radius:9px;padding:12px 14px;margin-bottom:14px;font-size:.78rem;color:var(--text)" id="diagPanel">'
+    var primerMesSheet=mesesOrdenados[0]||'?';
+    var tituloPanel=hayMayoSheet
+      ? 'OK Mayo 2025 cargado desde el Sheet'
+      : 'Mayo 2025 viene del respaldo local (el Sheet arranca en '+primerMesSheet+')';
+    var colorPanel=hayMayoSheet?'var(--green)':'var(--amber)';
+    var bgPanel=hayMayoSheet?'#0a3325':'#1a140a';
+    var bdPanel=hayMayoSheet?'#1a5c3a':'#3a2d0a';
+    var diagHtml='<div style="background:'+bgPanel+';border:1px solid '+bdPanel+';border-radius:9px;padding:12px 14px;margin-bottom:14px;font-size:.78rem;color:var(--text)" id="diagPanel">'
       +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'
       +'<div style="flex:1">'
-      +'<div style="font-weight:700;margin-bottom:6px;color:'+(hayMayo?'var(--green)':'var(--red)')+'">'+(hayMayo?'OK Mayo 2025 cargado':'Mayo 2025 NO detectado en el Sheet')+'</div>'
+      +'<div style="font-weight:700;margin-bottom:6px;color:'+colorPanel+'">'+tituloPanel+'</div>'
       +'<div style="color:var(--text2);line-height:1.6">'
       +'<b>Columnas detectadas:</b> Mes = col '+iMes+' ("'+colNombre(iMes)+'") &middot; Año = col '+iAnio+' ("'+colNombre(iAnio)+'") &middot; Monto = col '+iAmount+' ("'+colNombre(iAmount)+'")<br>'
-      +'<b>Filas:</b> '+diag.total+' totales &middot; '+diag.procesadas+' OK &middot; '+diag.sinFecha+' sin fecha &middot; '+diag.sinMonto+' sin monto &middot; '+diag.sinTipo+' sin tipo<br>'
-      +'<b>Meses encontrados ('+mesesOrdenados.length+'):</b> '+(mesesOrdenados.join(', ')||'ninguno')+'<br>'
+      +'<b>Filas Sheet:</b> '+diag.total+' totales &middot; '+diag.procesadas+' OK &middot; '+diag.sinFecha+' sin fecha &middot; '+diag.sinMonto+' sin monto &middot; '+diag.sinTipo+' sin tipo<br>'
+      +'<b>Meses en el Sheet ('+mesesOrdenados.length+'):</b> '+(mesesOrdenados.join(', ')||'ninguno')+'<br>'
+      +(hayMayoSheet?'':'<b style="color:var(--amber)">Para meses anteriores a '+primerMesSheet+' se usan los datos locales hardcodeados (Global66, etc.). Esos no se actualizan desde el Sheet.</b><br>')
       +'<b>Header completo:</b> <span style="font-family:DM Mono,monospace;font-size:.72rem;color:var(--text3)">'+header.map(function(h,i){return i+':'+h;}).join(' | ')+'</span>'
       +'</div></div>'
       +'<button onclick="document.getElementById(\'diagPanel\').remove()" style="background:transparent;border:1px solid var(--border2);color:var(--text3);border-radius:6px;padding:4px 8px;cursor:pointer;font-family:inherit;font-size:.7rem">cerrar</button>'
@@ -747,9 +756,40 @@ async function reloadFromSheet(){
           +'</div></div><button');
       }
     }
-    if(Object.keys(nS).length>0){Object.keys(SOCIOS).forEach(function(k){delete SOCIOS[k];}); Object.assign(SOCIOS,nS); activeSocios=new Set(Object.keys(SOCIOS));}
-    if(Object.keys(nEM).length>0){Object.keys(EGRESOS_META).forEach(function(k){delete EGRESOS_META[k];}); Object.assign(EGRESOS_META,nEM);}
-    Object.keys(nP).forEach(function(k){PASARELAS[k]=nP[k];});
+    // MERGE inteligente: el Sheet manda en los meses que trae; los meses anteriores se preservan del respaldo local.
+    var mesesSheet=new Set(mesesOrdenados);
+    function purgeMesesSheet(obj){
+      Object.keys(obj).forEach(function(k){
+        var d=obj[k].data||obj[k];
+        Object.keys(d).forEach(function(mk){if(mesesSheet.has(mk))delete d[mk];});
+      });
+    }
+    if(Object.keys(nS).length>0){
+      purgeMesesSheet(SOCIOS);
+      Object.keys(nS).forEach(function(socio){
+        if(!SOCIOS[socio])SOCIOS[socio]={};
+        Object.keys(nS[socio]).forEach(function(mk){SOCIOS[socio][mk]=nS[socio][mk];});
+      });
+      activeSocios=new Set(Object.keys(SOCIOS));
+    }
+    if(Object.keys(nEM).length>0){
+      purgeMesesSheet(EGRESOS_META);
+      Object.keys(nEM).forEach(function(eg){
+        if(!EGRESOS_META[eg])EGRESOS_META[eg]={data:{},cat:nEM[eg].cat,sub:nEM[eg].sub,tipo:nEM[eg].tipo,grupo:nEM[eg].grupo};
+        Object.keys(nEM[eg].data).forEach(function(mk){EGRESOS_META[eg].data[mk]=nEM[eg].data[mk];});
+        if(nEM[eg].cat)EGRESOS_META[eg].cat=nEM[eg].cat;
+        if(nEM[eg].sub)EGRESOS_META[eg].sub=nEM[eg].sub;
+        if(nEM[eg].tipo)EGRESOS_META[eg].tipo=nEM[eg].tipo;
+        if(nEM[eg].grupo)EGRESOS_META[eg].grupo=nEM[eg].grupo;
+      });
+      // Limpia egresos que quedaron sin ningun mes
+      Object.keys(EGRESOS_META).forEach(function(k){if(Object.keys(EGRESOS_META[k].data).length===0)delete EGRESOS_META[k];});
+    }
+    Object.keys(nP).forEach(function(k){
+      if(!PASARELAS[k])PASARELAS[k]={};
+      Object.keys(PASARELAS[k]).forEach(function(mk){if(mesesSheet.has(mk))delete PASARELAS[k][mk];});
+      Object.keys(nP[k]).forEach(function(mk){PASARELAS[k][mk]=nP[k][mk];});
+    });
     var allMK=new Set();
     [SOCIOS,PASARELAS].forEach(function(obj){Object.values(obj).forEach(function(d){Object.keys(d).forEach(function(k){allMK.add(k);});});});
     Object.values(EGRESOS_META).forEach(function(m){Object.keys(m.data).forEach(function(k){allMK.add(k);});});
