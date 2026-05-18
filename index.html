@@ -108,7 +108,7 @@ tr:hover td{background:var(--bg3)}
   <div class="hd">
     <div><h1>Dashboard Cuentas SegurosFly</h1><p id="subTitle">Resumen financiero &middot; Mar 2025 &ndash; hoy &middot; USD</p></div>
     <div class="ctrls">
-      <select id="yrSel" onchange="render()"><option value="all">Todos los a&ntilde;os</option><option value="2025">2025</option><option value="2026">2026</option></select>
+      <select id="yrSel" onchange="render()"><option value="all">Todos los a&ntilde;os</option></select>
       <select id="mnSel" onchange="render()">
         <option value="all">Todos los meses</option>
         <option value="3">Mar</option><option value="4">Abr</option><option value="5">May</option>
@@ -153,8 +153,20 @@ tr:hover td{background:var(--bg3)}
 <script>
 var SHEET_ID = '1-9073LxXGKAxXvwoUbcbwqklTKZAMpa4cVkpsqEmX3M';
 var GID_MERCURY = '1150506311';
+var SHEET_TABS = [
+  {gid:'1150506311', name:'Mercury USA'},
+  {gid:'266580265',  name:'General_Global'},
+  {gid:'820646854',  name:'Otros_Cuentas'}
+];
 var MES = {1:'Ene',2:'Feb',3:'Mar',4:'Abr',5:'May',6:'Jun',7:'Jul',8:'Ago',9:'Sep',10:'Oct',11:'Nov',12:'Dic'};
-var ALL_MONTHS = ['2025-3','2025-4','2025-5','2025-6','2025-7','2025-8','2025-9','2025-10','2025-11','2025-12','2026-1','2026-2','2026-3','2026-4'];
+var ALL_MONTHS = [];
+function rebuildAllMonths(){
+  var s=new Set();
+  [SOCIOS,PASARELAS].forEach(function(o){Object.values(o).forEach(function(d){Object.keys(d).forEach(function(k){s.add(k);});});});
+  Object.values(EGRESOS_META).forEach(function(m){Object.keys(m.data).forEach(function(k){s.add(k);});});
+  ALL_MONTHS.length=0;
+  Array.from(s).filter(function(k){return /^\d{4}-\d{1,2}$/.test(k);}).sort(function(a,b){var pa=a.split('-').map(Number),pb=b.split('-').map(Number);return pa[0]!==pb[0]?pa[0]-pb[0]:pa[1]-pb[1];}).forEach(function(k){ALL_MONTHS.push(k);});
+}
 var SOCIOS = {
   'Felix Ballesteros':{'2025-6':44.7,'2025-7':488,'2025-8':212,'2025-10':820,'2025-11':410,'2025-12':769,'2026-1':314,'2026-2':255.22,'2026-3':430},
   'Otoniel Martell':{'2025-4':302.28,'2025-5':88.47,'2025-6':100.28,'2025-7':150.45,'2025-8':444.97,'2025-9':102.81,'2025-10':200.04,'2025-11':156.55,'2025-12':543,'2026-1':619,'2026-2':123,'2026-3':247.41,'2026-4':295.58},
@@ -632,86 +644,123 @@ function doRecurrentes(months,labels){
   charts.rh=new Chart(document.getElementById('cRH'),{type:'bar',data:{labels:avgs.map(function(r){return r.name;}),datasets:[{label:'Prom./mes',data:avgs.map(function(r){return Math.round(r.avg);}),backgroundColor:avgs.map(function(_,i){return RC[i%RC.length]+'66';}),borderColor:avgs.map(function(_,i){return RC[i%RC.length];}),borderWidth:1,borderRadius:3}]},options:bo3});
 }
 
-async function reloadFromSheet(){
-  setLoading(true,'Conectando con Google Sheets...');
-  var url='https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/export?format=csv&gid='+GID_MERCURY+'&t='+Date.now();
+function parseSheetTab(text, tabName, nS, nEM, nP, diag){
+  var rows=parseCSV(text);
+  if(rows.length<2)throw new Error('Pesta\u00f1a "'+tabName+'" parece vacia.');
+  var hdrIdx=-1;
+  for(var i=0;i<Math.min(rows.length,60);i++){
+    var r=rows[i].map(function(h){return h.toLowerCase().trim();}).join(',');
+    if(r.includes('mes')&&r.includes('tipo')){hdrIdx=i;break;}
+  }
+  if(hdrIdx<0)throw new Error('No se encontro encabezado en pesta\u00f1a "'+tabName+'".');
+  var header=rows[hdrIdx].map(function(h){return h.toLowerCase().trim();});
+  function findCol(exacts,partials){
+    for(var e=0;e<exacts.length;e++){var i=header.indexOf(exacts[e]);if(i>=0)return i;}
+    if(partials)for(var p=0;p<partials.length;p++){var j=header.findIndex(function(h){return h.includes(partials[p]);});if(j>=0)return j;}
+    return -1;
+  }
+  var iMes=findCol(['mes','month'],['mes']),
+      iAnio=findCol(['a\u00f1o','anio','year'],['a\u00f1o','anio','year']),
+      iAmount=findCol(['amount','monto','valor','importe'],['amount','monto','importe']),
+      iTipoIn=header.findIndex(function(h){return h.includes('tipo ingreso')||h.includes('tipo ingresos');}),
+      iTipoEg=header.findIndex(function(h){return h.includes('tipo egreso')||h.includes('tipo egresos');}),
+      iCat=findCol(['categor\u00eda','categoria','category'],['categor']),
+      iSub=findCol(['sub categor\u00eda','sub categoria','subcategoria'],['sub cat','subcat']),
+      iTipo=findCol(['tipo']),
+      iGrupo=findCol(['grupo','group']);
+  if(iMes<0||iAnio<0)throw new Error('Pesta\u00f1a "'+tabName+'": no se encontraron columnas Mes/Anio.');
+  var cols={iMes:iMes,iAnio:iAnio,iAmount:iAmount,iTipoIn:iTipoIn,iTipoEg:iTipoEg,iCat:iCat,iSub:iSub,iTipo:iTipo,iGrupo:iGrupo};
+  var tabDiag={tab:tabName,total:0,procesadas:0,sinFecha:0,sinMonto:0,sinTipo:0,socio:0,stripe:0,dlocal:0,cashback:0,invLR:0,invJT:0,excluido:0,egresos:0};
+  rows.slice(hdrIdx+1).forEach(function(row){
+    if(!row||row.length===0||row.every(function(c){return !c||!String(c).trim();}))return;
+    diag.total++; tabDiag.total++;
+    var mes=parseMes(row[iMes]), anio=parseAnio(row[iAnio]);
+    if(isNaN(mes)||isNaN(anio)||mes<1||mes>12||anio<2020){
+      diag.sinFecha++; tabDiag.sinFecha++;
+      if(diag.muestraSaltadas.length<6)diag.muestraSaltadas.push({razon:'fecha',tab:tabName,mes:row[iMes],anio:row[iAnio]});
+      return;
+    }
+    var mk=anio+'-'+mes;
+    var amount=iAmount>=0?cleanNum(row[iAmount]):0;
+    if(amount<=0){
+      diag.sinMonto++; tabDiag.sinMonto++;
+      if(diag.muestraSaltadas.length<6)diag.muestraSaltadas.push({razon:'monto',tab:tabName,monto:row[iAmount],mk:mk});
+      return;
+    }
+    diag.procesadas++; tabDiag.procesadas++;
+    var tipoIn=iTipoIn>=0?(row[iTipoIn]||'').trim():'';
+    var tipoEg=iTipoEg>=0?(row[iTipoEg]||'').trim():'';
+    var cat=iCat>=0?(row[iCat]||'').trim():'';
+    var sub=iSub>=0?(row[iSub]||'').trim():'';
+    var tipo=iTipo>=0?(row[iTipo]||'').trim():'';
+    var grupo=iGrupo>=0?(row[iGrupo]||'').trim():'';
+    if(tipoIn){
+      var tl=tipoIn.toLowerCase();
+      diag.tipoInVals[tipoIn]=(diag.tipoInVals[tipoIn]||0)+amount;
+      if(!diag.tipoInPerTab[tipoIn])diag.tipoInPerTab[tipoIn]={};
+      diag.tipoInPerTab[tipoIn][tabName]=(diag.tipoInPerTab[tipoIn][tabName]||0)+amount;
+      if(tl.includes('stripe')){nP.Stripe[mk]=(nP.Stripe[mk]||0)+amount;diag.tipoInRouted.stripe+=amount;tabDiag.stripe+=amount;}
+      else if(tl.includes('dlocal')||tl.includes('pingpong')){nP.Dlocal[mk]=(nP.Dlocal[mk]||0)+amount;diag.tipoInRouted.dlocal+=amount;tabDiag.dlocal+=amount;}
+      else if(tl.includes('cashback')){nP['Mercury Cashback'][mk]=(nP['Mercury Cashback'][mk]||0)+amount;diag.tipoInRouted.cashback+=amount;tabDiag.cashback+=amount;}
+      else if(tl.includes('inversion lr')||(tl.includes('inversion')&&tl.includes('lr'))){nP['Inversion LR'][mk]=(nP['Inversion LR'][mk]||0)+amount;diag.tipoInRouted.invLR+=amount;tabDiag.invLR+=amount;}
+      else if(tl.includes('inversion jt')||(tl.includes('inversion')&&tl.includes('jt'))){nP['Inversion JT'][mk]=(nP['Inversion JT'][mk]||0)+amount;diag.tipoInRouted.invJT+=amount;tabDiag.invJT+=amount;}
+      else if(tl.includes('inversion')){nP['Inversion LR'][mk]=(nP['Inversion LR'][mk]||0)+amount;diag.tipoInRouted.invLR+=amount;tabDiag.invLR+=amount;}
+      else if(!tl.includes('interes')&&!tl.includes('global')&&tipoIn.length>1){if(!nS[tipoIn])nS[tipoIn]={};nS[tipoIn][mk]=(nS[tipoIn][mk]||0)+amount;diag.tipoInRouted.socio+=amount;tabDiag.socio+=amount;}
+      else{diag.tipoInRouted.excluido+=amount;tabDiag.excluido+=amount;}
+    }
+    if(tipoEg&&tipoEg.length>1){
+      if(!nEM[tipoEg])nEM[tipoEg]={data:{},cat:cat||'Otros',sub:sub||'Otros',tipo:tipo||'',grupo:grupo||tipoEg};
+      nEM[tipoEg].data[mk]=(nEM[tipoEg].data[mk]||0)+amount;
+      if(cat)nEM[tipoEg].cat=cat; if(sub)nEM[tipoEg].sub=sub; if(tipo)nEM[tipoEg].tipo=tipo; if(grupo)nEM[tipoEg].grupo=grupo;
+      tabDiag.egresos+=amount;
+    }
+    if(!tipoIn&&!tipoEg){
+      diag.sinTipo++; tabDiag.sinTipo++;
+      if(diag.muestraSaltadas.length<6)diag.muestraSaltadas.push({razon:'sin tipo',tab:tabName,mk:mk,monto:amount});
+    }
+  });
+  diag.tabs.push(tabDiag);
+  diag.headers[tabName]={header:header,cols:cols};
+  return {header:header,cols:cols};
+}
+
+// Fetch con reintentos anti-CORS: directo → allorigins → corsproxy.io
+async function fetchTabCSV(tab){
+  var base='https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/export?format=csv&gid='+tab.gid;
+  var bust='&t='+Date.now();
+  // Intento 1: directo
   try{
-    var res=await fetch(url);
-    if(!res.ok)throw new Error('HTTP '+res.status+'. Verifica que el Sheet sea publico.');
-    var text=await res.text();
-    setLoading(true,'Procesando datos...');
-    var rows=parseCSV(text);
-    if(rows.length<2)throw new Error('El Sheet parece vacio.');
-    var hdrIdx=-1;
-    for(var i=0;i<Math.min(rows.length,60);i++){
-      var r=rows[i].map(function(h){return h.toLowerCase().trim();}).join(',');
-      if(r.includes('mes')&&r.includes('tipo')){hdrIdx=i;break;}
-    }
-    if(hdrIdx<0)throw new Error('No se encontro el encabezado.');
-    var header=rows[hdrIdx].map(function(h){return h.toLowerCase().trim();});
-    function fi(name){return header.findIndex(function(h){return h.includes(name);});}
-    function findCol(exacts,partials){
-      for(var e=0;e<exacts.length;e++){var i=header.indexOf(exacts[e]);if(i>=0)return i;}
-      if(partials)for(var p=0;p<partials.length;p++){var j=header.findIndex(function(h){return h.includes(partials[p]);});if(j>=0)return j;}
-      return -1;
-    }
-    var iMes=findCol(['mes','month'],['mes']),
-        iAnio=findCol(['a\u00f1o','anio','year'],['a\u00f1o','anio','year']),
-        iAmount=findCol(['amount','monto','valor','importe'],['amount','monto','importe']),
-        iTipoIn=header.findIndex(function(h){return h.includes('tipo ingreso')||h.includes('tipo ingresos');}),
-        iTipoEg=header.findIndex(function(h){return h.includes('tipo egreso')||h.includes('tipo egresos');}),
-        iCat=findCol(['categor\u00eda','categoria','category'],['categor']),
-        iSub=findCol(['sub categor\u00eda','sub categoria','subcategoria'],['sub cat','subcat']),
-        iTipo=findCol(['tipo']),
-        iGrupo=findCol(['grupo','group']);
-    if(iMes<0||iAnio<0)throw new Error('No se encontraron columnas Mes/Anio.');
+    var r=await fetch(base+bust,{cache:'no-store'});
+    if(r.ok){var t=await r.text();if(t.length>50&&!t.trim().startsWith('<!'))return{tab:tab,text:t};}
+  }catch(e){}
+  // Intento 2: allorigins
+  try{
+    var r2=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(base),{cache:'no-store'});
+    if(r2.ok){var t2=await r2.text();if(t2.length>50&&!t2.trim().startsWith('<!'))return{tab:tab,text:t2};}
+  }catch(e){}
+  // Intento 3: corsproxy.io
+  try{
+    var r3=await fetch('https://corsproxy.io/?'+encodeURIComponent(base),{cache:'no-store'});
+    if(r3.ok){var t3=await r3.text();if(t3.length>50&&!t3.trim().startsWith('<!'))return{tab:tab,text:t3};}
+  }catch(e){}
+  throw new Error('No se pudo obtener la pestaña "'+tab.name+'". Verifica que el Sheet sea público (Compartir → Cualquier persona con el enlace).');
+}
+
+async function reloadFromSheet(){
+  setLoading(true,'Conectando con Google Sheets ('+SHEET_TABS.length+' pesta\u00f1as)...');
+  try{
+    var fetches=SHEET_TABS.map(function(tab){return fetchTabCSV(tab);});
+    var results=await Promise.all(fetches);
+    setLoading(true,'Procesando datos de '+results.length+' pesta\u00f1as...');
     var nS={}, nEM={}, nP={Stripe:{},Dlocal:{},'Mercury Cashback':{},'Inversion LR':{},'Inversion JT':{}};
-    var diag={total:0,procesadas:0,sinFecha:0,sinMonto:0,sinTipo:0,muestraSaltadas:[],tipoInVals:{},tipoInRouted:{stripe:0,dlocal:0,cashback:0,invLR:0,invJT:0,socio:0,excluido:0}};
-    rows.slice(hdrIdx+1).forEach(function(row){
-      if(!row||row.length===0||row.every(function(c){return !c||!String(c).trim();}))return;
-      diag.total++;
-      var mes=parseMes(row[iMes]), anio=parseAnio(row[iAnio]);
-      if(isNaN(mes)||isNaN(anio)||mes<1||mes>12||anio<2020){
-        diag.sinFecha++;
-        if(diag.muestraSaltadas.length<6)diag.muestraSaltadas.push({razon:'fecha',mes:row[iMes],anio:row[iAnio],fila:row});
-        return;
-      }
-      var mk=anio+'-'+mes;
-      var amount=iAmount>=0?cleanNum(row[iAmount]):0;
-      if(amount<=0){
-        diag.sinMonto++;
-        if(diag.muestraSaltadas.length<6)diag.muestraSaltadas.push({razon:'monto',monto:row[iAmount],mk:mk,fila:row});
-        return;
-      }
-      diag.procesadas++;
-      var tipoIn=iTipoIn>=0?(row[iTipoIn]||'').trim():'';
-      var tipoEg=iTipoEg>=0?(row[iTipoEg]||'').trim():'';
-      var cat=iCat>=0?(row[iCat]||'').trim():'';
-      var sub=iSub>=0?(row[iSub]||'').trim():'';
-      var tipo=iTipo>=0?(row[iTipo]||'').trim():'';
-      var grupo=iGrupo>=0?(row[iGrupo]||'').trim():'';
-      if(tipoIn){
-        var tl=tipoIn.toLowerCase();
-        diag.tipoInVals[tipoIn]=(diag.tipoInVals[tipoIn]||0)+amount;
-        if(tl.includes('stripe')){nP.Stripe[mk]=(nP.Stripe[mk]||0)+amount;diag.tipoInRouted.stripe+=amount;}
-        else if(tl.includes('dlocal')||tl.includes('pingpong')){nP.Dlocal[mk]=(nP.Dlocal[mk]||0)+amount;diag.tipoInRouted.dlocal+=amount;}
-        else if(tl.includes('cashback')){nP['Mercury Cashback'][mk]=(nP['Mercury Cashback'][mk]||0)+amount;diag.tipoInRouted.cashback+=amount;}
-        else if(tl.includes('inversion lr')||(tl.includes('inversion')&&tl.includes('lr'))){nP['Inversion LR'][mk]=(nP['Inversion LR'][mk]||0)+amount;diag.tipoInRouted.invLR+=amount;}
-        else if(tl.includes('inversion jt')||(tl.includes('inversion')&&tl.includes('jt'))){nP['Inversion JT'][mk]=(nP['Inversion JT'][mk]||0)+amount;diag.tipoInRouted.invJT+=amount;}
-        else if(tl.includes('inversion')){nP['Inversion LR'][mk]=(nP['Inversion LR'][mk]||0)+amount;diag.tipoInRouted.invLR+=amount;}
-        else if(!tl.includes('interes')&&!tl.includes('global')&&tipoIn.length>1){if(!nS[tipoIn])nS[tipoIn]={};nS[tipoIn][mk]=(nS[tipoIn][mk]||0)+amount;diag.tipoInRouted.socio+=amount;}
-        else{diag.tipoInRouted.excluido+=amount;}
-      }
-      if(tipoEg&&tipoEg.length>1){
-        if(!nEM[tipoEg])nEM[tipoEg]={data:{},cat:cat||'Otros',sub:sub||'Otros',tipo:tipo||'',grupo:grupo||tipoEg};
-        nEM[tipoEg].data[mk]=(nEM[tipoEg].data[mk]||0)+amount;
-        if(cat)nEM[tipoEg].cat=cat; if(sub)nEM[tipoEg].sub=sub; if(tipo)nEM[tipoEg].tipo=tipo; if(grupo)nEM[tipoEg].grupo=grupo;
-      }
-      if(!tipoIn&&!tipoEg){
-        diag.sinTipo++;
-        if(diag.muestraSaltadas.length<6)diag.muestraSaltadas.push({razon:'sin tipo',mk:mk,monto:amount,fila:row});
-      }
+    var diag={total:0,procesadas:0,sinFecha:0,sinMonto:0,sinTipo:0,muestraSaltadas:[],tipoInVals:{},tipoInPerTab:{},tipoInRouted:{stripe:0,dlocal:0,cashback:0,invLR:0,invJT:0,socio:0,excluido:0},tabs:[],headers:{}};
+    var primaryHeader=null, primaryCols=null;
+    results.forEach(function(r){
+      var parsed=parseSheetTab(r.text,r.tab.name,nS,nEM,nP,diag);
+      if(!primaryHeader){primaryHeader=parsed.header;primaryCols=parsed.cols;}
     });
+    var header=primaryHeader, cols=primaryCols||{};
+    var iMes=cols.iMes,iAnio=cols.iAnio,iAmount=cols.iAmount,iTipoIn=cols.iTipoIn,iTipoEg=cols.iTipoEg,iCat=cols.iCat,iSub=cols.iSub,iTipo=cols.iTipo,iGrupo=cols.iGrupo;
     var mesesDetectados={};
     [nS,nP].forEach(function(o){Object.values(o).forEach(function(d){Object.keys(d).forEach(function(k){mesesDetectados[k]=(mesesDetectados[k]||0)+1;});});});
     Object.values(nEM).forEach(function(m){Object.keys(m.data).forEach(function(k){mesesDetectados[k]=(mesesDetectados[k]||0)+1;});});
@@ -816,11 +865,7 @@ async function reloadFromSheet(){
       Object.keys(PASARELAS[k]).forEach(function(mk){if(mesesSheet.has(mk))delete PASARELAS[k][mk];});
       Object.keys(nP[k]).forEach(function(mk){PASARELAS[k][mk]=nP[k][mk];});
     });
-    var allMK=new Set();
-    [SOCIOS,PASARELAS].forEach(function(obj){Object.values(obj).forEach(function(d){Object.keys(d).forEach(function(k){allMK.add(k);});});});
-    Object.values(EGRESOS_META).forEach(function(m){Object.keys(m.data).forEach(function(k){allMK.add(k);});});
-    ALL_MONTHS.length=0;
-    Array.from(allMK).filter(function(k){return /^\d{4}-\d{1,2}$/.test(k);}).sort(function(a,b){var pa=a.split('-').map(Number),pb=b.split('-').map(Number);return pa[0]!==pb[0]?pa[0]-pb[0]:pa[1]-pb[1];}).forEach(function(k){ALL_MONTHS.push(k);});
+    rebuildAllMonths();
     rebuildYearSelect();
     buildEgFilterOptions();
     var now=new Date();
@@ -879,6 +924,9 @@ function loadFromCache(){
   }catch(e){console.warn('Error al leer cache:',e);return false;}
 }
 
+// Inicialización: construir meses dinámicamente desde datos hardcodeados
+rebuildAllMonths();
+rebuildYearSelect();
 buildEgFilterOptions();
 // Si hay datos guardados de una sesión anterior, los carga; si no, usa el respaldo hardcodeado
 var hadCache=loadFromCache();
